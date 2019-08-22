@@ -29,8 +29,9 @@ double lidar_offset = 0;         //라이다가 전방에서 삐뚤어진 각도
 double d_lidar_gps = 1;          //라이다와 gps사이의 거리.
 #define candidate_num 6          //중심 제외 단방향으로의 후보경로       
 double search_range  = 1;        //단방향 후보경로 탐색범위(m) ,q방향
-#define candidate_path_leng 9    //후보경로 s길이 (m), 정수로 설정할 것
-double lane_width = 3.5;         //차선 변경이 필요한 구간의 차선 폭
+#define candidate_path_leng 10   //후보경로의 절점개수
+double path_leng = 7;            //후보경로의 길이 s길이 (m)
+double lane_width = 3.5;         //차선 변경이 필요한 구간의 차선 폭, 예선 3.7, 본선 3.5
 
 double w_offset      = 0.5;
 double w_lane        = 0.0; 
@@ -54,9 +55,9 @@ double scan_data[811];        //극좌표계(상대좌표계), 캘리브레이�
 double obstacle_data[2][811]; //xy좌표계(절대좌표계), 캘리브레이션 되어있음
 
 //from gps_txt reader
-double base_path[2][int(candidate_path_leng) + 1]      = { 0 };
-double base_path_vec[int(candidate_path_leng) + 1]     = { 0 };
-double candidate_path[2][int(candidate_path_leng) + 1] = { 0 };
+double base_path[2][int(candidate_path_leng)]      = { 0 };
+double base_path_vec[int(candidate_path_leng)]     = { 0 };
+double candidate_path[2][int(candidate_path_leng)] = { 0 };
 
 double localized_p_before[2];   
 double qi;                       //초기 오프셋
@@ -97,18 +98,13 @@ void ObstacleCallBack(const std_msgs::Float64MultiArray::ConstPtr& xy)
 
 void headingCallBack(const insgps_y::Message2::ConstPtr& location)
 {
-    x_tm     = location->pos_x;
-    y_tm     = location->pos_y;
     heading  = location->yaw;
 }
 
 
 void laneCallBack(const macaron::Floats::ConstPtr& lane)
 {
-    lane->mid_point_vector;
-    lane->testset.data;
-    lane->testset.layout;
-    int seq = lane->header.seq;
+    int seq        = lane->header.seq;
     int dstride0   = lane->testset.layout.dim[0].stride;
     int dstride1   = lane->testset.layout.dim[1].stride;
     int h          = lane->testset.layout.dim[0].size;
@@ -153,7 +149,11 @@ void pathCallBack(const macaron::base_frame::ConstPtr& path)
     localized_p_before[0] = base_path[0][0];
     localized_p_before[1] = base_path[1][0];
     qi                    = path->distance;
-    for(int i = 0; i <= int(candidate_path_leng); i++)
+    path_leng             = path->ld;
+    x_tm     = path->tm_x;
+    y_tm     = path->tm_y;
+
+    for(int i = 0; i < int(candidate_path_leng); i++)
     {
         base_path[0][i]  = path->s_x[i];
         base_path[1][i]  = path->s_y[i];
@@ -175,24 +175,24 @@ void generate_candidate_path(int index, int lane)
 {
     qf = search_range / double(candidate_num) * double(index) + (1 - lane) * lane_width;
     double theta = heading - base_path_vec[0];
-    double ds = candidate_path_leng;
+    double ds = path_leng;
     double a1 = (ds * tan(theta) - 2 * (qf - qi)) / (ds * ds * ds);
     double a2 = (qf - qi) / (ds * ds);
 
-    for(int i = 0; i <= int(candidate_path_leng); i++)
+    for(int i = 0; i < int(candidate_path_leng); i++)
     {
-        int s = i;
+        double s = path_leng / double(candidate_path_leng - 1) * i;
         double offset = (s - ds)*(s - ds) * (a1*s - a2) + qf;
-         candidate_path[0][i] = base_path[0][i] + offset * cos(base_path_vec[i] + PI/2);
+        candidate_path[0][i] = base_path[0][i] + offset * cos(base_path_vec[i] + PI/2);
         candidate_path[1][i] = base_path[1][i] + offset * sin(base_path_vec[i] + PI/2);
     }
 
-    selected_path.data.resize((int(candidate_path_leng) + 1) * 2);
+    selected_path.data.resize(int(candidate_path_leng) * 2);
     for(int xy = 0; xy < 2; xy++)
     {
-        for(int i = 0; i <= int(candidate_path_leng); i++)
+        for(int i = 0; i < int(candidate_path_leng); i++)
         {
-             selected_path.data[i + (int(candidate_path_leng) + 1) * xy] = candidate_path[xy][i];
+             selected_path.data[i + int(candidate_path_leng) * xy] = candidate_path[xy][i];
         }
     }
 }
@@ -207,26 +207,26 @@ double path_cost()
     double lane_d = 100; //임의의 큰 수, 후보경로의 끝점으로 부터 차선중심까지의 거리
     for(int i = 0; i < lane_data_size; i++)
     {
-        double TEMP_d = sqrt(pow(candidate_path[0][int(candidate_path_leng)] - lane_abs[0][i], 2) + pow(candidate_path[1][int(candidate_path_leng)] - lane_abs[1][i], 2));
+        double TEMP_d = sqrt(pow(candidate_path[0][int(candidate_path_leng) - 1] - lane_abs[0][i], 2) + pow(candidate_path[1][int(candidate_path_leng) - 1] - lane_abs[1][i], 2));
         if(TEMP_d < lane_d)
             lane_d = TEMP_d;
     }
     cost_lane = lane_d * (1 - lane_error);
 
 	//consistency cost, IGNORE it on the First loop
-	double common_s = double(candidate_path_leng) - sqrt(pow(base_path[0][0] - localized_p_before[0], 2) + pow(base_path[1][0] - localized_p_before[1], 2));
+	double common_s = path_leng - sqrt(pow(base_path[0][0] - localized_p_before[0], 2) + pow(base_path[1][0] - localized_p_before[1], 2));
 	cost_consistency = fabs(qf - qf_before) * common_s * 0.5 * (1 - firstrun);
 
     //obstacle cost
     cost_obstalce = 0;
     for(int i = 0; i < 811; i++)
     {
-        if(scan_data[i] < candidate_path_leng)
+        if(scan_data[i] < path_leng)
         {
-            for(int k = 0; k <= int(candidate_path_leng); k++)
+            for(int k = 0; k < int(candidate_path_leng); k++)
             {
                 double d_obstacle = sqrt(pow(candidate_path[0][k] - obstacle_data[0][i], 2) + pow(candidate_path[1][k] - obstacle_data[1][i], 2));
-                if(d_obstacle < width / 2)
+                if(d_obstacle < width)
                 {
                     cost_obstalce = 1;
                     break;
@@ -237,13 +237,14 @@ double path_cost()
         }
     }
 
-	return w_offset*cost_offset + w_lane*cost_lane;// + w_consistency*cost_consistency + w_obstacle*cost_obstalce;
+	return w_offset*cost_offset + w_lane*cost_lane + w_consistency*cost_consistency + w_obstacle*cost_obstalce;
 	
 }
 
 
 void print_on_terminal()
 {
+    printf("Selected Lane             : %d\n",1 - selected_lane);
     printf("Selected Path Index       : %d\n",selected_index);
     printf("Selected Offset           : %fm\n\n",qf);
     printf("Selected Offset cost      : %f\n",cost_offset);
@@ -256,7 +257,7 @@ void print_on_terminal()
 
 void visualizing_path(int index, int lane, int selected)
 {
-    for(int i = 0; i <= int(candidate_path_leng); i++)
+    for(int i = 0; i < int(candidate_path_leng); i++)
     {
         geometry_msgs::Point p;
         std_msgs::ColorRGBA c;
@@ -272,7 +273,7 @@ void visualizing_path(int index, int lane, int selected)
         path_rviz_msg.color           = c;
         path_rviz_msg.header.frame_id = "map";
         path_rviz_msg.action = visualization_msgs::Marker::ADD;
-        path_rviz_msg.id = i + 100 + (index + candidate_num) * (int(candidate_path_leng) + 1) + lane * (2 * candidate_num + 1) * (int(candidate_path_leng) + 1);
+        path_rviz_msg.id = i + 100 + (index + candidate_num) * int(candidate_path_leng) + lane * (2 * candidate_num + 1) * int(candidate_path_leng);
         path_viewer.markers.push_back(path_rviz_msg);
     }
 }
@@ -282,7 +283,7 @@ void visualizing_obstacle()
 {
     for(int i = 0; i < 811; i++)
     {
-        if(scan_data[i] <= candidate_path_leng)
+        if(scan_data[i] < candidate_path_leng)
         {
             geometry_msgs::Point p;
             std_msgs::ColorRGBA c;

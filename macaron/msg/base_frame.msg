@@ -1,4 +1,5 @@
 int32 big_node
+float64 ld
 float64 distance
 float64[] s_x
 float64[] s_y

@@ -11,16 +11,16 @@
 //----------------control property--------------------------//
 double wheel_base = 1.040, tread = 0.985, width = 1.160; //macaron property
 double ld = 7;                   //ld (m), 정수로 설정할 것
-#define candidate_path_leng 9    //후보경로 s길이 (m), 정수로 설정할 것
+#define candidate_path_leng 10    //후보경로의 절점개수
 
 
 //-------------------input value--------------------------//
 //from path planner
-double selected_path[2][int(candidate_path_leng) + 1];
+double selected_path[2][int(candidate_path_leng)];
 
 //from gps_txt reader
-double base_path[2][int(candidate_path_leng) + 1]  = { 0 };
-double base_path_vec[int(candidate_path_leng) + 1] = { 0 };
+double base_path[2][int(candidate_path_leng)]  = { 0 };
+double base_path_vec[int(candidate_path_leng)] = { 0 };
 
 //from Localization node
 double x_tm;
@@ -36,15 +36,15 @@ int write_gear  = 0;
 int write_speed = 0;
 int write_brake = 1;
 int write_steer = 0;
-
+std_msgs::Float64 lookahead;
 
 void s_pathCallBack(const std_msgs::Float64MultiArray::ConstPtr& path)
 {
     for(int xy = 0; xy < 2; xy++)
     {
-        for(int i = 0; i <= int(candidate_path_leng); i++)
+        for(int i = 0; i < int(candidate_path_leng); i++)
         {
-            selected_path[xy][i] = path->data[i + (int(candidate_path_leng) + 1) * xy];
+            selected_path[xy][i] = path->data[i + int(candidate_path_leng) * xy];
         }
     }
 }
@@ -60,7 +60,7 @@ void headingCallBack(const insgps_y::Message2::ConstPtr& location)
 
 void pathCallBack(const macaron::base_frame::ConstPtr& path) 
 {
-    for(int i = 0; i <= int(candidate_path_leng); i++)
+    for(int i = 0; i < int(candidate_path_leng); i++)
     {
         base_path[0][i]  = path->s_x[i];
         base_path[1][i]  = path->s_y[i];
@@ -82,6 +82,8 @@ int main(int argc, char **argv)
     ros::Rate loop_rate(50);
 
     ros::Publisher vel_planner = nh.advertise<macaron::erp42_write>("erp_write", 1);
+    ros::Publisher lookahead_publisher = nh.advertise<std_msgs::Float64>("lookahead", 1);
+
     macaron::erp42_write erp42;
 
     ros::Subscriber seleted_path_sub    = nh.subscribe("/selected_path",10, s_pathCallBack);
@@ -93,8 +95,8 @@ int main(int argc, char **argv)
     {
         ros::spinOnce();
         
-        double ld_x  = selected_path[0][int(ld)];
-        double ld_y  = selected_path[1][int(ld)];
+        double ld_x  = selected_path[0][int(candidate_path_leng) - 1];
+        double ld_y  = selected_path[1][int(candidate_path_leng) - 1];
         double alpha = heading - atan2(y_tm - ld_y, x_tm - ld_x); //현재 방향과 ld포인트 사이의 각도 차이 , 오른손나사, rad
 
         //steer control
@@ -114,15 +116,18 @@ int main(int argc, char **argv)
         if(write_speed > 50) 
             write_speed = 50;   
         */
-
+        ld = double(write_speed) / 5 + 2;
+        lookahead.data = ld;
         erp42.write_speed = int(write_speed * speed_reduction + 0.5); //여기에 말고 최대속도에 곱하는 방안을 생각해보자.
         erp42.write_steer = write_steer;
         erp42.write_gear  = 0;
         erp42.write_brake = 1;
+        lookahead_publisher.publish(lookahead);   
         vel_planner.publish(erp42);     
         
         printf("Selected steer angle : %fdegree\n",write_steer / 71.0);
-        printf("Selected velocity    : %d\n\n",erp42.write_speed);
+        printf("Selected velocity    : %d\n",erp42.write_speed);
+        printf("lookahead length     : %f\n",ld);
         printf("Speed reduction      : %f\n",speed_reduction);
         printf("---------------------------------------------------\n");
         loop_rate.sleep();

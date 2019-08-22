@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 # from macaron.msg import Floats
 from macaron.msg import base_frame
 from geometry_msgs.msg import Point, Vector3
-from std_msgs.msg import Int32,ColorRGBA, Header  
+from std_msgs.msg import Int32,ColorRGBA, Header,Float64
 from sensor_msgs.msg import NavSatFix
 PI=math.acos(-1)
 present_num=0
@@ -49,20 +49,19 @@ class GPSTxT_leader():
                 
         def map_initializer(self):
             global p,poly,dt,Nsample,b,p_length,leng,direction
-
-        #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/8line.txt",delimiter=',',dtype='double')
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/8line_8.12_proper.txt",delimiter=',',dtype='double')
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/8line_8.12_rev.txt",delimiter=',',dtype='double')
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/C_c8.txt",delimiter=',',dtype='double')
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/C_cw8.txt",delimiter=',',dtype='double')
-            a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/C_won4.txt",delimiter=',',dtype='double')
+        #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/C_won4.txt",delimiter=',',dtype='double')
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/hyehwa.txt",delimiter=',',dtype='double')
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/hywhwa_comback.txt",delimiter=',',dtype='double')
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/won4.txt",delimiter=',',dtype='double')
                         
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/C_won4.txt",delimiter=',',dtype='double')
-        #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/8line_8.12_proper.txt",delimiter=',',dtype='double')
-        
+            a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/8line_8.12_proper.txt",delimiter=',',dtype='double')
+        #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/8line.txt",delimiter=',',dtype='double')        
+        #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/manhae_tm_real.txt",delimiter=',',dtype='double')
             line_name = "catkin_ws/src/macaron/scripts/eightlight/8line_npy"+".npy"     
             np.save(line_name,a)
             b=np.load(line_name)
@@ -110,6 +109,12 @@ class GPSTxT_leader():
         #     plt.plot(p[0][:],p[1][:], 'r', label='f(x)')
         #     plt.grid(True)
             #plt.show()
+
+        def lookahead_listener(self):
+                lookahead=Float64()
+                lookahead=rospy.wait_for_message("/lookahead", Float64)
+                ld=lookahead.data
+                return ld
 
         def listener(self):
             my_State=NavSatFix()
@@ -209,8 +214,8 @@ class GPSTxT_leader():
 
                         Fsum=0
                         s=[0]
-                    
-                        while(Fsum<10):
+                        ld=self.lookahead_listener()
+                        while(Fsum<ld):
                                 big_node=int((present_num+path_leng)/Nsample)
                                 if(big_node>leng-1):
                                         break
@@ -220,24 +225,25 @@ class GPSTxT_leader():
                                         F,err=quad(ft, float(small_node)/Nsample,float(small_node+1)/Nsample)
                                         Fsum=Fsum+F
                                         path_leng=path_leng+1
-                                        if Fsum>10:
+                                        if Fsum>ld:
                                                 break
                                         elif present_num+path_leng>p_length-1:
                                                 break
                                         s.append(Fsum)
 
-                        #print(len(s),path_leng)                    
+                        print(len(s),path_leng)                    
                                 #s=[Fsum]
                         if(len(s)>2):
+                                point_array=np.linspace(0, ld, 11)
                                 distance=((my_x-p[0][present_num])**2 + (my_y-p[1][present_num])**2)**0.5      
                                 fpx=np.poly1d(np.polyfit(s,p[0][present_num:present_num+path_leng],3))
                                 fpy=np.poly1d(np.polyfit(s,p[1][present_num:present_num+path_leng],3))
-                                ix=fpx([0,1,2,3,4,5,6,7,8,9,10])
-                                iy=fpy([0,1,2,3,4,5,6,7,8,9,10])
+                                ix=fpx(point_array)
+                                iy=fpy(point_array)
                                 iangle=[]
                                 idistance=[]
                                 for scurve in range(0,Nsample):
-                                        iangle.append(math.atan2(iy[scurve+1]-iy[scurve],ix[scurve+1]-ix[scurve])*180/PI)
+                                        iangle.append(math.atan2(iy[scurve+1]-iy[scurve],ix[scurve+1]-ix[scurve]))
                                         idistance.append(math.sqrt((iy[scurve+1]-iy[scurve])**2+(ix[scurve+1]-ix[scurve])**2))
                                 
                                 a=ix[10]-ix[0]
@@ -252,24 +258,24 @@ class GPSTxT_leader():
 
 
 
-                                now_po=Point()
-                                now_msg = Marker(
-                                        type=Marker.POINTS,
+                        #        now_po=Point()
+                        #        now_msg = Marker(
+                        #                type=Marker.POINTS,
                                         # points=Point(bm[i][0],bm[i][1],0),
-                                        lifetime=rospy.Duration(0),
-                                        scale=Vector3(0.5,0.5,0.1),
-                                        header=Header(frame_id='map'),
-                                        color=ColorRGBA(0.0, 1.0, 0.0, 0.8)
-                                        )
+                        #                lifetime=rospy.Duration(0),
+                        #                scale=Vector3(0.5,0.5,0.1),
+                        #                header=Header(frame_id='map'),
+                        #                color=ColorRGBA(0.0, 1.0, 0.0, 0.8)
+                        #                )
 
-                                now_po.x=p[0][present_num]-self.offset_X
-                                now_po.y=p[1][present_num]-self.offset_Y
-                                now_po.z=0
+                        #        now_po.x=p[0][present_num]-self.offset_X
+                        #        now_po.y=p[1][present_num]-self.offset_Y
+                        #        now_po.z=0
 
-                                now_msg.points=[now_po]
-                                now_msg.id=6
+                        #        now_msg.points=[now_po]
+                        #        now_msg.id=6
                                 # rviz_msg.points.x=p.x
-                                self.now_plot.publish(now_msg)
+                        #        self.now_plot.publish(now_msg)
                                 
                                 print("------------------------------")
                                 print(direction,distance)
@@ -289,6 +295,7 @@ class GPSTxT_leader():
                                 # self.now_plot.publish(now_po)
                                 node_index.data=int(present_num/Nsample)
                                 base.distance=direction*distance
+                                base.ld=ld
                                 base.s_x=ix
                                 base.s_y=iy
                                 base.s_a=iangle

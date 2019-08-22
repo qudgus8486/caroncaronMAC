@@ -26,6 +26,7 @@ catkin_python_setup()
  add_message_files(
 	FILES
 	Floats.msg
+	Floats_for_mission.msg
 	HeaderString.msg
 	erp42_read.msg
 	erp42_write.msg
@@ -67,9 +68,9 @@ add_executable(vel_planning src/vel_planning.cpp)
 add_dependencies(vel_planning ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(vel_planning ${catkin_LIBRARIES})
 
-add_executable(puppet src/puppet.cpp)
-add_dependencies(puppet ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(puppet ${catkin_LIBRARIES})
+#add_executable(puppet src/puppet.cpp)
+#add_dependencies(puppet ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+#target_link_libraries(puppet ${catkin_LIBRARIES})
 
 add_executable(path_planning src/path_planning.cpp)
 add_dependencies(path_planning ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -79,9 +80,9 @@ add_executable(mission_identifying src/mission_identifying.cpp)
 add_dependencies(mission_identifying ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(mission_identifying ${catkin_LIBRARIES})
 
-add_executable(parking_algorithm src/parking_algorithm.cpp)
-add_dependencies(parking_algorithm ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(parking_algorithm ${catkin_LIBRARIES})
+#add_executable(parking_algorithm src/parking_algorithm.cpp)
+#add_dependencies(parking_algorithm ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+#target_link_libraries(parking_algorithm ${catkin_LIBRARIES})
 
 
 #target_link_libraries(linetracker #
