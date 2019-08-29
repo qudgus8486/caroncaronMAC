@@ -1,4 +1,5 @@
 float64 deviation
+float64 stop_deviation
 float64 left_curv
 float64 right_curv
 float64[] mid_point_vector

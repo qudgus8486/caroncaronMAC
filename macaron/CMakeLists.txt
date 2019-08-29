@@ -68,6 +68,10 @@ add_executable(vel_planning src/vel_planning.cpp)
 add_dependencies(vel_planning ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(vel_planning ${catkin_LIBRARIES})
 
+add_executable(traffic_test src/traffic_test.cpp)
+add_dependencies(traffic_test ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(traffic_test ${catkin_LIBRARIES})
+
 #add_executable(puppet src/puppet.cpp)
 #add_dependencies(puppet ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 #target_link_libraries(puppet ${catkin_LIBRARIES})

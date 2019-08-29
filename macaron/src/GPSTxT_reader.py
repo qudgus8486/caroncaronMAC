@@ -23,6 +23,12 @@ from sensor_msgs.msg import NavSatFix
 PI=math.acos(-1)
 present_num=0
 
+#_K_city_x =515540
+#_K_city_y =179847
+#8line_x =550922
+#8line_y =199952
+#offset_x=_K_city_x
+#offset_y=_K_city_y
 
 
 
@@ -35,8 +41,8 @@ class GPSTxT_leader():
                 self.now_plot = rospy.Publisher('/driving', Marker, queue_size=3)
                 
                 ## Eightlines position 
-                self.offset_X=550922
-                self.offset_Y=199952
+                self.offset_X=515540
+                self.offset_Y=179847
                 ## K-city position
                 # self.offset_X=515540
                 # self.offset_Y=179847
@@ -49,6 +55,8 @@ class GPSTxT_leader():
                 
         def map_initializer(self):
             global p,poly,dt,Nsample,b,p_length,leng,direction
+
+        #     a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/C_manhae.txt",delimiter=',',dtype='double')
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/8line_8.12_proper.txt",delimiter=',',dtype='double')
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/8line_8.12_rev.txt",delimiter=',',dtype='double')
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/C_c8.txt",delimiter=',',dtype='double')
@@ -59,9 +67,12 @@ class GPSTxT_leader():
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/won4.txt",delimiter=',',dtype='double')
                         
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/C_won4.txt",delimiter=',',dtype='double')
-            a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/8line_8.12_proper.txt",delimiter=',',dtype='double')
+        #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/8line_8.12_proper.txt",delimiter=',',dtype='double')
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/8line.txt",delimiter=',',dtype='double')        
         #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/manhae_tm_real.txt",delimiter=',',dtype='double')
+        #    a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/track1.txt",delimiter=',',dtype='double')
+            a=np.loadtxt("catkin_ws/src/macaron/scripts/eightlight/track2.txt",delimiter=',',dtype='double')
+        
             line_name = "catkin_ws/src/macaron/scripts/eightlight/8line_npy"+".npy"     
             np.save(line_name,a)
             b=np.load(line_name)
@@ -118,30 +129,9 @@ class GPSTxT_leader():
 
         def listener(self):
             my_State=NavSatFix()
-            my_State=rospy.wait_for_message("/fix", NavSatFix)
-            lon =my_State.longitude
-            lat =my_State.latitude
-        
-            st_lat = 38.0
-            st_lon = 127.0
-            k_0 =1.0 
-            a = 6378137.0 
-            b = 6356752.31 
-            f =(a-b)/a 
-            d_y = 200000.0 
-            d_x = 600000.0 
-        
-            e = (a*a - b*b) / (a*a) 
-            e_2 = (a*a - b*b) / (b*b) 
-            M = a * ((1 - e/4.0 - 3.0*e*e/64.0 - 5.0*pow(e,6.0)/256.0)* math.radians(lat) - (3.0*e/8.0 + 3.0*e*e/32.0 + 45.0*e*e*e/1024.0)* math.sin(2* math.radians(lat)) + (15.0*e*e/256.0 + 45.0*e*e*e/1024.0)* math.sin(4.0* math.radians(lat)) - 35.0*e*e*e/3072.0* math.sin(6.0* math.radians(lat))) 
-            C = (e / (1-e))* math.cos( math.radians(lat)) 
-            T = pow( math.tan( math.radians(lat)),2) 
-            A = ( math.radians(lon - st_lon))* math.cos( math.radians(lat)) 
-            N = a/ math.sqrt(1-(e)*( math.sin( math.radians(lat))* math.sin( math.radians(lat)))) 
-            M_0 = a * ((1 - e/4.0 - 3.0*e*e/64.0 - 5.0*e*e*e/256.00)* math.radians(st_lat) - (3.0*e/8.0 + 3.0*e*e/32.0 + 45.0*e*e*e/1024.0)* math.sin(2.0* math.radians(st_lat)) + (15.0*e*e/256.0 + 45.0*e*e*e/1024.0)* math.sin(4.0* math.radians(st_lat)) - 35.0*e*e*e/3072.0* math.sin(6.0* math.radians(st_lat))) 
-            y_tm = (d_y+k_0*N*(A + (A*A*A/6.0)*(1-T+C) + (A*A*A*A*A/120.0) * (5.0 - 18.0*T + T*T + 72.0*C - 58.0*e_2))) 
-            x_tm = (d_x + k_0*(M - M_0 + N* math.tan(math.radians(lat))*(A*A/2.0 + (A*A*A*A/24.0)*(5.0-T+9.0*C+4.0*C*C)+(A*A*A*A*A*A/720.0)*(61.0-58.0*T+T*T+600.0*C-330.0*e_2)))) 
-            #print(x_tm,y_tm)
+            my_State=rospy.wait_for_message("/heading", Vector3)
+            x_tm =my_State.x
+            y_tm =my_State.y
             return x_tm,y_tm
 
         def track_initiate(self):
@@ -159,7 +149,7 @@ class GPSTxT_leader():
                             type=Marker.POINTS,
                             # points=Point(bm[i][0],bm[i][1],0),
                             lifetime=rospy.Duration(0),
-                            scale=Vector3(0.5,0.5,0.1),
+                            scale=Vector3(1,1,0.1),
                             header=Header(frame_id='map'),
                             color=ColorRGBA(0.0, 0.0, 1.0, 0.8)
                             )
@@ -167,7 +157,7 @@ class GPSTxT_leader():
                         po.y=bm[count][1]
                         po.z=0
                         ##for smooth plotting
-                        rospy.sleep(0.02)
+                        rospy.sleep(0.04)
                         rviz_msg.points=[po]
                         rviz_msg.id=count
                         # rviz_msg.points.x=p.x
@@ -198,8 +188,9 @@ class GPSTxT_leader():
                                         a=-1
                                 elif(a<1 and a>0):
                                         a=1
-                                
-                                
+                                elif(math.isnan(a)):
+                                        a=1
+
                                 present_num=present_num+int(a)
                                 if present_num>p_length-2:
                                         present_num=p_length-2
@@ -252,30 +243,30 @@ class GPSTxT_leader():
                                 d=my_y-iy[0]
 
                                 if (a*d-b*c)>0:
-                                        direction=1
-                                else:
                                         direction=-1
+                                else:
+                                        direction=1
 
 
 
-                        #        now_po=Point()
-                        #        now_msg = Marker(
-                        #                type=Marker.POINTS,
-                                        # points=Point(bm[i][0],bm[i][1],0),
-                        #                lifetime=rospy.Duration(0),
-                        #                scale=Vector3(0.5,0.5,0.1),
-                        #                header=Header(frame_id='map'),
-                        #                color=ColorRGBA(0.0, 1.0, 0.0, 0.8)
-                        #                )
+                                now_po=Point()
+                                now_msg = Marker(
+                                        type=Marker.POINTS,
+                                        #points=Point(bm[i][0],bm[i][1],0),
+                                        lifetime=rospy.Duration(0),
+                                        scale=Vector3(0.5,0.5,0.1),
+                                        header=Header(frame_id='map'),
+                                        color=ColorRGBA(0.0, 1.0, 0.0, 0.8)
+                                        )
 
-                        #        now_po.x=p[0][present_num]-self.offset_X
-                        #        now_po.y=p[1][present_num]-self.offset_Y
-                        #        now_po.z=0
+                                now_po.x=p[0][present_num]-self.offset_X
+                                now_po.y=p[1][present_num]-self.offset_Y
+                                now_po.z=0
 
-                        #        now_msg.points=[now_po]
-                        #        now_msg.id=6
+                                now_msg.points=[now_po]
+                                now_msg.id=6
                                 # rviz_msg.points.x=p.x
-                        #        self.now_plot.publish(now_msg)
+                                self.now_plot.publish(now_msg)
                                 
                                 print("------------------------------")
                                 print(direction,distance)

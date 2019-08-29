@@ -8,6 +8,7 @@
 #include <serial/serial.h>
 #include <macaron/erp42_read.h>
 #include <macaron/erp42_write.h>
+#include <std_msgs/Int32.h>
 #define PI acos(-1)
 #define MAX 18
 
@@ -19,8 +20,7 @@ int firstrun = 1;
 
 //write value
 int steer=0;
-bool E_stop;
-uint8_t steer1,steer2,speed,brake,gear;
+uint8_t E_stop,steer1,steer2,speed,brake,gear;
 
 double wheel_base = 1.040, tread = 0.985, width = 1.160; //macaron property
 double ENC_saver[4];
@@ -28,7 +28,6 @@ double vel_saver[4];
 double dt=0;
 void write_callback(const macaron::erp42_write::ConstPtr& write){
 
-    E_stop=write->write_E_stop;
     gear=write->write_gear;
     steer= write->write_steer;
     steer1=(steer/256);
@@ -39,6 +38,21 @@ void write_callback(const macaron::erp42_write::ConstPtr& write){
 }
 
 
+void E_stop_CallBack(const std_msgs::Int32::ConstPtr& stop)
+{   printf("stop");
+    if(stop->data)
+    {
+        E_stop=0x01;
+        printf("yes\n");
+    }
+    else
+    {
+        E_stop=0x00;    
+        printf("no\n");
+    }
+}
+
+
 int main (int argc, char** argv){
     ros::init(argc, argv, "serial_example_node");
     ros::NodeHandle nh;
@@ -46,7 +60,8 @@ int main (int argc, char** argv){
     ros::Time current_time, last_time;
     current_time = ros::Time::now();
     last_time = ros::Time::now();
-    ros::Subscriber write_sub = nh.subscribe("erp_write", 1, write_callback);
+    ros::Subscriber write_sub  = nh.subscribe("erp_write", 1, write_callback);
+    ros::Subscriber E_stop_sub = nh.subscribe("/E_stop", 1, E_stop_CallBack);
     ros::Publisher read_pub = nh.advertise<macaron::erp42_read>("erp_read", 1);
     macaron::erp42_read erp42_state;
     try
@@ -116,7 +131,7 @@ int main (int argc, char** argv){
     uint8_t a;
     a++;
 
-    uint8_t ask[14]={0x53,0x54,0x58,0x01,0x00,gear,0x00,speed,steer1,steer2,brake,a,0x0D,0x0A};
+    uint8_t ask[14]={0x53,0x54,0x58,0x01,E_stop,gear,0x00,speed,steer1,steer2,brake,a,0x0D,0x0A};
     ser.write(ask,14);//S  0x53
 
         if(ser.available()){
@@ -166,7 +181,7 @@ int main (int argc, char** argv){
 
         if(erp42_state.read_steer>32768) erp42_state.read_steer=erp42_state.read_steer-65536+1;
  
-        erp42_state.read_yaw=erp42_state.read_yaw+0.01652*(ENC_saver[0]-ENC_saver[1])*tan(double(erp42_state.read_steer)/71*PI/180)/wheel_base*180/PI;
+        erp42_state.read_yaw=0.01664*(ENC_saver[0]-ENC_saver[1])*tan(double(erp42_state.read_steer)/71*PI/180)/wheel_base;
         erp42_state.read_s=erp42_state.read_s+0.01652*(ENC_saver[0]-ENC_saver[1])*cos( erp42_state.read_yaw/180/PI); //사실 y임
         erp42_state.read_l=erp42_state.read_s+0.01652*(ENC_saver[0]-ENC_saver[1])*sin( erp42_state.read_yaw/180/PI); //사실 x임
         read_pub.publish(erp42_state);

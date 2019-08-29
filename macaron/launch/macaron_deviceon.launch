@@ -1,6 +1,5 @@
 <launch>
 
-  <include file="$(find ocams_1cgn)/launch/ocams_ros.launch" />
   <include file="$(find sick_tim)/launch/sick_tim571_2050101.launch" />
   <include file="$(find nmea_navsat_driver)/launch/nmea_serial_driver.launch" />
 
@@ -20,6 +19,9 @@
 	type="serial_example_node" 
 	name="erp42_com"/>
 
+  <include file="$(find ocams_1cgn)/launch/ocams_ros.launch" />
+
+
 </launch>
 
 <!-- prebious...
@@ -32,5 +34,7 @@
     <param name="baud" value="38400"/>
 
   </node>
+
+
   -->
 

@@ -27,10 +27,12 @@ from macaron.msg import Floats_for_mission
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import CompressedImage
 
+from multiprocessing import Process, Pipe, Queue, queues
+import os
+
+
 flaots = Floats()
 flaots_for_mission = Floats_for_mission()
-
-
 
 
 def plot_stop_peak_hist(warped_gray, base_stop_image_yellow, road_width, PIXEL_CONVERSION_RATE, is_plot=True):
@@ -479,7 +481,7 @@ def plot_detected_poly(out_img, left_fit, right_fit, is_plot=True):
     return out_img
 
 
-def next_frame_find_poly_already_fitted(binary_warped_left, binary_warped_right, left_fit, right_fit, lower_offset, upper_offset, following_right_lane, following_left_lane, road_width, PIXEL_CONVERSION_RATE, error_loop, PT_view_height, stopx_base, zero_1, zero_3,line_type, bump_basex, bump_height, margin=50, is_plot=True,
+def next_frame_find_poly_already_fitted(binary_warped_left, binary_warped_right, left_fit, right_fit, lower_offset, upper_offset, following_right_lane, following_left_lane, road_width, PIXEL_CONVERSION_RATE, error_loop, PT_view_height, stopx_base, zero_1, zero_3,line_type, bump_basex, bump_height, viewsize, ym_per_pix, margin=50, is_plot=True,
                                         add_debug_image=True):
     # Assume you now have a new warped binary image
     # from the next frame of video (also called "binary_warped")
@@ -858,13 +860,13 @@ def next_frame_find_poly_already_fitted(binary_warped_left, binary_warped_right,
         debug_images.append(out_img_half_sum)
 
 
-    left_curverad, right_curverad = get_radius_of_curvature(left_fit, right_fit, out_img_left)
-    deviation = get_vehicle_deviation(out_img_left, left_fit, right_fit)
+    left_curverad, right_curverad = get_radius_of_curvature(left_fit, right_fit, out_img_left, ym_per_pix)
+    deviation = get_vehicle_deviation(out_img_left, left_fit, right_fit, PIXEL_CONVERSION_RATE)
 
     return left_fit, right_fit, left_curverad, right_curverad, deviation, debug_images, error, following_left_lane, following_right_lane, top_offset, mid_offset, bot_offset, left_fit_deg_ave, center_fit_deg_ave, right_fit_deg_ave, roi_limit_L, roi_limit_M, roi_limit_R, center_fit_mid_normal_grad, roi_limit_bump
 
 
-def get_radius_of_curvature(left_fit_cr, right_fit_cr, image_for_size):
+def get_radius_of_curvature(left_fit_cr, right_fit_cr, image_for_size, ym_per_pix):
     plot_yyy = np.linspace(0, image_for_size.shape[0] - 1, image_for_size.shape[0])
 
     # Define conversions in x and y from pixels space to meters
@@ -881,7 +883,7 @@ def get_radius_of_curvature(left_fit_cr, right_fit_cr, image_for_size):
     return left_curverad, right_curverad
 
 
-def get_vehicle_deviation(img, left_fit, right_fit):
+def get_vehicle_deviation(img, left_fit, right_fit, PIXEL_CONVERSION_RATE):
     image_bottom_pixel = img.shape[0] - 1
 
     bottom_x_position_left_lane = left_fit[0] * (image_bottom_pixel ** 2) + left_fit[1] * (image_bottom_pixel) \
@@ -1005,7 +1007,7 @@ def get_already_fit_image_plot(out_img_half_sum, left_fit, right_fit, center_fit
     return result, window_img_left, window_img_right, window_img_left_submargin, window_img_right_submargin
 
 
-def plot_lanes_unwrap(viewsize, left_poly, right_poly, left_turn, right_turn, left_yellow_lane, right_yellow_lane, undistorted_in_rgb, M_INV, stopx_base, roi_limit_M, roi_limit_L, roi_limit_R, originalsize, is_plot=False, add_debug_image=True):
+def plot_lanes_unwrap(viewsize, left_poly, right_poly, left_turn, right_turn, left_yellow_lane, right_yellow_lane, undistorted_in_rgb, M_INV, stopx_base, roi_limit_M, roi_limit_L, roi_limit_R, originalsize, dst_pts, is_plot=False, add_debug_image=True):
     debug_images = []
 
     if stopx_base > viewsize[1] / 14:
@@ -1101,16 +1103,19 @@ def plot_lanes_unwrap(viewsize, left_poly, right_poly, left_turn, right_turn, le
 
 # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ투상변환 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
 def PTtrans_and_Circle(video_copy1, video_copy2, src_pts_yfix, dst_pts, viewsize):
+    print('fuck1')
     cv2.circle(video_copy2, tuple(src_pts_yfix[0]), 10, (0, 0, 255), 3)  # 변환하는 위치를 원본 이미지에 표시
     cv2.circle(video_copy2, tuple(src_pts_yfix[1]), 10, (0, 127, 255), 3)  # 빨주노초, 왼쪽 아래부터 시계방향
     cv2.circle(video_copy2, tuple(src_pts_yfix[2]), 10, (0, 255, 255), 3)
     cv2.circle(video_copy2, tuple(src_pts_yfix[3]), 10, (0, 255, 0), 3)
-
+    print('fuck11')
     perspective_m = cv2.getPerspectiveTransform(src_pts_yfix, dst_pts)
+    print('fuck111')
     video_copy1_PTtrans = cv2.warpPerspective(video_copy1, perspective_m, (viewsize[0], viewsize[1]), flags=cv2.INTER_LINEAR)  # 변환된 hsv 영상 출력 영역 (dst_pts 랑 똑같이 맞춰주면 됨)
+    print('fuck12')
     # video_copy1_PTtrans = cv2.warpPerspective(video_copy2, perspective_m, (viewsize[0],viewsize[1]))  # circle 포함
     # video_copy1_PTtrans = np.copy(video_copy1)                                        # 투상변환 적용 안하기
-
+    print('fuck2')
     # cv2.imshow('video_copy1_PTtrans', video_copy1_PTtrans)  #변환 이미지 출력
     return video_copy1_PTtrans, video_copy2
 
@@ -1263,7 +1268,6 @@ def Show_Original_Window_Mix(bynary_and_red_blue_and_poly_area, video_copy1, src
     return video_window_PTtrans_reverse, video_original_window_mix
 
 
-# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ원본 영상, 윈도우 영상 합성ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
 
 
 def find_proper_transper_point(proper_size, sight_height, target_distance, road_width, margin, view_scale, focal_length_horizontal, focal_length_vertical, view_length1_h, view_length1_h_bot, view_length2_v, PIXEL_CONVERSION_RATE):
@@ -1316,6 +1320,580 @@ def find_proper_transper_point(proper_size, sight_height, target_distance, road_
     return target_road_margin_srt, target_road_margin_dst, PT_view_width, PT_view_height, PT_view_width_2, PT_view_height_2, vertical_lane, straght_lane_left, straght_lane_right
 
 
+def get_lane(receive_image, error, left_fit, right_fit, following_left_lane, following_right_lane, target_left_pixel_percent, target_right_pixel_percent, full_line_target_percent, roi_limit_L, roi_limit_M, roi_limit_R, line_type, bump_basex, bump_height, left_turn, right_turn,
+             error_pixel_percent_left, error_pixel_percent_right, total_error_left, total_error_right, total_error_half_sum, error_pixel_percent_yellow, error_pixel_percent_half_sum, white_tresh_lower_left, white_tresh_lower_right, white_tresh_lower_half_sum, yellow_s_tresh_lower, PT_view_width,
+             PT_view_height, loop, bynary_half_sum_pixel_percent, target_half_sum_pixel_percent, out, bynary_left_pixel_percent, bynary_right_pixel_percent, deviation, top_offset, mid_offset, bot_offset, tresh_factor_right, left_fit_deg_ave, center_fit_deg_ave, right_fit_deg_ave, stop_deviation,
+             length_stop_histogram, max_stop_histogram, center_fit_mid_normal_grad, stopx_base, road_width, PIXEL_CONVERSION_RATE, lower_offset, upper_offset, zero_1, zero_3, viewsize, ym_per_pix, kp, ki, kd, M_INV, dst_pts, PT_view_width_2, PT_view_height_2, vertical_lane, straght_lane_left, straght_lane_right, src_pts_yfix):
+    binary_all_left_gray = np.copy(receive_image[0])
+    binary_all_right_gray = np.copy(receive_image[1])
+    binary_all_half_sum_gray = np.copy(receive_image[2])
+    binary_detect_morph_brg_left = np.copy(receive_image[3])
+    binary_detect_morph_brg_right = np.copy(receive_image[4])
+    binary_detect_morph_brg_half_sum = np.copy(receive_image[5])
+    binary_detect_stop_morph_brg = np.copy(receive_image[6])
+    yellow_mask_area_detect_morph = np.copy(receive_image[7])
+    video_copy1 = np.copy(receive_image[8])
+    video_copy2 = np.copy(receive_image[9])
+    final_line_color = np.copy(receive_image[10])
+    video_copy1_PTtrans = np.copy(receive_image[11])
+
+    originalsize = (video_copy1.shape[1], video_copy1.shape[0])  # h, w, d = video.shape
+    print(originalsize)
+
+    add_debug_image1 = True
+    add_debug_image1_a = False
+    add_debug_image2 = True
+    add_debug_image2_a = False
+    add_debug_image2_b = False
+    add_debug_image3 = True
+    is_debug = True
+    error_loop = 0
+
+    view_area = PT_view_width * PT_view_height
+
+    flaots.testset.layout.dim.append(MultiArrayDimension())
+    flaots.testset.layout.dim.append(MultiArrayDimension())
+    flaots.testset.layout.dim[0].label = "height"
+    flaots.testset.layout.dim[1].label = "width"
+    flaots.testset.layout.dim[0].size = 2
+    flaots.testset.layout.dim[1].size = 23
+    flaots.testset.layout.dim[0].stride = 2 * 23
+    flaots.testset.layout.dim[1].stride = 23
+    flaots.testset.layout.data_offset = 0
+    flaots.testset.data = np.zeros((46))
+
+    dstride0 = flaots.testset.layout.dim[0].stride
+    dstride1 = flaots.testset.layout.dim[1].stride
+    offset = flaots.testset.layout.data_offset
+
+    plt.ion()
+
+    if error != 0:
+        half_sum_pix_img = np.copy(binary_detect_morph_brg_half_sum)
+        half_sum_pix_img[:, int(half_sum_pix_img.shape[1] // 2 - road_width / PIXEL_CONVERSION_RATE / 4 - 1):int(half_sum_pix_img.shape[1] // 2 + road_width / PIXEL_CONVERSION_RATE / 4 - 1)] = 0
+        half_sum_pix_img[:, :int(half_sum_pix_img.shape[1] // 2 - (road_width / 2 + 1) / PIXEL_CONVERSION_RATE - 1)] = 0
+        half_sum_pix_img[:, int(half_sum_pix_img.shape[1] // 2 + (road_width / 2 + 1) / PIXEL_CONVERSION_RATE - 1):] = 0
+
+        bynary_half_sum_pixel_percent = np.sum(half_sum_pix_img) / (half_sum_pix_img.shape[0] * half_sum_pix_img.shape[1])
+        target_half_sum_pixel_percent = full_line_target_percent * 3
+        # white_tresh_lower_half_sum = white_tresh_lower_half * ((bynary_half_sum_pixel_percent + 0.5) / (target_half_sum_pixel_percent + 0.5))
+        prev_error_pixel_percent_half_sum = error_pixel_percent_half_sum
+        error_pixel_percent_half_sum = bynary_half_sum_pixel_percent - target_half_sum_pixel_percent
+        total_error_half_sum = total_error_half_sum + error_pixel_percent_half_sum
+        tresh_factor_half_sum = kp * error_pixel_percent_half_sum + ki * total_error_half_sum + kd * (error_pixel_percent_half_sum - prev_error_pixel_percent_half_sum)
+        white_tresh_lower_half_sum = white_tresh_lower_half_sum * pow(2, tresh_factor_half_sum)
+        if white_tresh_lower_half_sum >= 205: white_tresh_lower_half_sum = 205
+        if white_tresh_lower_half_sum <= 157: white_tresh_lower_half_sum = 157
+
+        white_tresh_lower_left = white_tresh_lower_half_sum
+        white_tresh_lower_right = white_tresh_lower_half_sum
+
+        print('white_tresh_lower_half_sum = ', white_tresh_lower_half_sum, '   bynary_half_sum_pixel_percent = ', bynary_half_sum_pixel_percent)
+
+    if len(left_fit) == 0:
+        leftx_base, rightx_base, hist, error, inner_length = find_left_right_via_histogram(binary_all_half_sum_gray, road_width, PIXEL_CONVERSION_RATE, add_debug_image=False)  # 영상에서의 왼쪽 오른쪽 차선의 초기 위치를 뽑아내는 함수
+        if inner_length <= (road_width - 1) / PIXEL_CONVERSION_RATE: stopx_base = 0
+
+        if error == 0:
+            left_fit, right_fit, debug_images1, error, following_left_lane, following_right_lane = find_ploy_fit_window_search(binary_all_half_sum_gray, leftx_base, rightx_base, following_left_lane, following_right_lane, road_width, PIXEL_CONVERSION_RATE, target_left_pixel_percent,
+                                                                                                                               target_right_pixel_percent, full_line_target_percent, roi_limit_L, roi_limit_M, roi_limit_R, PT_view_height, stopx_base, nwindows=13,
+                                                                                                                               margin=round(0.45 / PIXEL_CONVERSION_RATE), is_plot=False,
+                                                                                                                               add_debug_image=add_debug_image1)  # 사각 영역을 만들어 차선을 탐지하고 추세선을 만드는 함수
+            # if error == 0: #cv2.imshow('debug_images1', debug_images1[0])
+            if (add_debug_image1) & (error == 0):
+                add_debug_image1_a = 1
+            if is_debug: print("stage 4 a.. done_1")
+
+    if error == 0:
+        left_fit, right_fit, lc, rc, deviation, debug_images2, error, following_left_lane, following_right_lane, top_offset, mid_offset, bot_offset, left_fit_deg_ave, center_fit_deg_ave, right_fit_deg_ave, roi_limit_L, roi_limit_M, roi_limit_R, center_fit_mid_normal_grad, roi_limit_bump = next_frame_find_poly_already_fitted(
+            binary_all_left_gray, binary_all_right_gray, left_fit, right_fit, lower_offset,
+            upper_offset, following_right_lane, following_left_lane,
+            road_width, PIXEL_CONVERSION_RATE, error_loop, PT_view_height, stopx_base, zero_1, zero_3, line_type, bump_basex, bump_height, viewsize, ym_per_pix,
+            margin=round(0.3 / PIXEL_CONVERSION_RATE), is_plot=False,
+            add_debug_image=add_debug_image2)
+
+        if error == 0:
+            if add_debug_image2:
+                add_debug_image2_a = 1
+            if is_debug: print("stage 4 b.. done_2")
+
+            if line_type == 3:
+                binary_detect_morph_brg_right[roi_limit_bump[1]:roi_limit_bump[0]] = 0
+                binary_detect_morph_brg_left[roi_limit_bump[1]:roi_limit_bump[0]] = 0
+                # cv2.imshow('yellow_limit',binary_detect_morph_brg_right*255)
+
+            bynary_window_image_left_area = cv2.bitwise_and(binary_detect_morph_brg_left, debug_images2[1])
+            bynary_all_window_image_left_area = cv2.bitwise_and(binary_all_left_gray, debug_images2[1])
+            bynary_all_window_image_left_area_2 = cv2.bitwise_and(binary_all_left_gray, debug_images2[3])
+            bynary_window_image_right_area = cv2.bitwise_and(binary_detect_morph_brg_right, debug_images2[2])
+            bynary_all_window_image_right_area = cv2.bitwise_and(binary_all_right_gray, debug_images2[2])
+            bynary_all_window_image_right_area_2 = cv2.bitwise_and(binary_all_left_gray, debug_images2[4])
+
+            # cv2.imshow('debug_images2[3]', debug_images2[3]*255)
+            # cv2.imshow('debug_images2[4]', debug_images2[4]*255)
+
+            bynary_left_pixel_percent = np.sum(bynary_window_image_left_area) / ((viewsize[0] - roi_limit_L - (roi_limit_bump[0] - roi_limit_bump[1])) * viewsize[1])
+            bynary_right_pixel_percent = np.sum(bynary_window_image_right_area) / ((viewsize[0] - roi_limit_R - (roi_limit_bump[0] - roi_limit_bump[1])) * viewsize[1])
+
+            dotted_line_target_percent = 0.0038
+            full_line_target_percent = 0.01
+
+            if left_turn == True:
+                target_left_pixel_percent = dotted_line_target_percent
+            else:
+                target_left_pixel_percent = full_line_target_percent
+            if right_turn == True:
+                target_right_pixel_percent = dotted_line_target_percent
+            else:
+                target_right_pixel_percent = full_line_target_percent
+
+            # left_gray, _, _ = cv2.split(bynary_window_image_left_area)
+            # right_gray, _, _ = cv2.split(bynary_window_image_right_area)
+            # cv2.imshow('bynary_window_image_right_area',bynary_window_image_right_area)
+            left_lane_list = np.sum(bynary_all_window_image_left_area, axis=1) >= 1
+            left_lane_list_blank = np.sum(bynary_all_window_image_left_area, axis=1) == 0
+            right_lane_list = np.sum(bynary_all_window_image_right_area, axis=1) >= 1
+            right_lane_list_blank = np.sum(bynary_all_window_image_right_area, axis=1) == 0
+            # print('left_lane_list = ',left_lane_list)
+            check_change = np.zeros((viewsize[1], viewsize[0], 3))
+
+            for i in range(len(left_lane_list)):
+                if left_lane_list[i] == True:
+                    check_change[i, :, :] = 255
+
+            # cv2.imshow('check_change', check_change)
+
+            length_of_lane = 0
+            length_of_lane_blank = 0
+            last_lane = 0
+            check_sibal = 0
+            left_lane_change = 0
+            right_lane_change = 0
+            dotted_line_length = 2.5
+            str_line = 6
+            lane_storage = []
+
+            a_L = 0
+            b_L = 0
+            a_R = 0
+            b_R = 0
+
+            print('len(left_lane_list) = ', len(left_lane_list))
+            for i in range(len(left_lane_list)):
+                length_of_lane = length_of_lane + left_lane_list[i]
+                length_of_lane_blank = length_of_lane_blank + left_lane_list_blank[i]
+                a_L = a_L + left_lane_list[i] * PIXEL_CONVERSION_RATE
+                b_L = b_L + left_lane_list_blank[i] * PIXEL_CONVERSION_RATE
+                if last_lane != left_lane_list[i]:
+                    check_sibal = check_sibal + 1
+                    print('sibal1 = ', check_sibal)
+                last_lane = left_lane_list[i]
+                if (check_sibal >= 4) & (length_of_lane_blank < 1.5 / PIXEL_CONVERSION_RATE):
+                    length_of_lane_blank = 0
+                    check_sibal = 0
+                    print('left_noise_blank')
+                if (check_sibal >= 4) & (length_of_lane < 1.5 / PIXEL_CONVERSION_RATE):
+                    length_of_lane = 0
+                    check_sibal = 0
+                    print('left_noise_lane')
+                if (check_sibal >= 1) & (left_lane_list[i] == 0) & (length_of_lane > dotted_line_length / PIXEL_CONVERSION_RATE) & (length_of_lane_blank > 2 / PIXEL_CONVERSION_RATE):
+                    lane_storage.append(length_of_lane)
+                    length_of_lane = 0
+                    check_sibal = 0
+                    print('left_have_append')
+                if length_of_lane > str_line / PIXEL_CONVERSION_RATE:
+                    left_turn = False
+                    lane_storage = []
+                    print('left_long_lane')
+                    break
+            if len(lane_storage) >= 1:
+                if max(lane_storage) >= str_line / PIXEL_CONVERSION_RATE:
+                    left_turn = False
+                    print('left_long_lane2')
+                    print('L_max(lane_storage) = ', max(lane_storage) * PIXEL_CONVERSION_RATE)
+                elif (max(lane_storage) < str_line / PIXEL_CONVERSION_RATE):
+                    left_turn = True
+                    print('left_short_lane')
+                    print('L_max(lane_storage) = ', max(lane_storage) * PIXEL_CONVERSION_RATE)
+
+            print('a_L = ', a_L)
+            print('b_L = ', b_L)
+            check_sibal = 0
+            length_of_lane = 0
+            length_of_lane_blank = 0
+            lane_storage = []
+            for i in range(len(right_lane_list)):
+                length_of_lane = length_of_lane + right_lane_list[i]
+                length_of_lane_blank = length_of_lane_blank + right_lane_list_blank[i]
+                a_R = a_R + left_lane_list[i] * PIXEL_CONVERSION_RATE
+                b_R = b_R + left_lane_list_blank[i] * PIXEL_CONVERSION_RATE
+                if last_lane != right_lane_list[i]:
+                    check_sibal = check_sibal + 1
+                    print('sibal2 = ', check_sibal)
+                last_lane = right_lane_list[i]
+                if (check_sibal >= 4) & (length_of_lane_blank < 1.5 / PIXEL_CONVERSION_RATE):
+                    length_of_lane_blank = 0
+                    check_sibal = 0
+                    print('right_noise_blank')
+                if (check_sibal >= 4) & (length_of_lane < 1.5 / PIXEL_CONVERSION_RATE):
+                    length_of_lane = 0
+                    check_sibal = 0
+                    print('right_noise_lane')
+                if (check_sibal >= 1) & (right_lane_list[i] == 0) & (length_of_lane > dotted_line_length / PIXEL_CONVERSION_RATE) & (length_of_lane_blank > 2 / PIXEL_CONVERSION_RATE):
+                    lane_storage.append(length_of_lane)
+                    check_sibal = 0
+                    length_of_lane = 0
+                    print('right_have_append')
+                if length_of_lane > str_line / PIXEL_CONVERSION_RATE:
+                    right_turn = False
+                    lane_storage = []
+                    print('right_long_lane = ', length_of_lane * PIXEL_CONVERSION_RATE)
+                    break
+            if len(lane_storage) >= 1:
+                if max(lane_storage) >= str_line / PIXEL_CONVERSION_RATE:
+                    right_turn = False
+                    print('right_long_lane')
+                    print('R_max(lane_storage) = ', max(lane_storage) * PIXEL_CONVERSION_RATE)
+                elif (max(lane_storage) < str_line / PIXEL_CONVERSION_RATE):
+                    right_turn = True
+                    print('right_short_lane')
+                    print('R_max(lane_storage) = ', max(lane_storage) * PIXEL_CONVERSION_RATE)
+
+            print('a_R = ', a_R)
+            print('b_R = ', b_R)
+
+            if (roi_limit_L > (PT_view_height // 5) * 2) | (roi_limit_R > (PT_view_height // 5) * 2) | (line_type == 3):
+                left_turn = False
+                right_turn = False
+                print('not_dotted_lane_by_roi_limit')
+
+            # if left_lane_change >=1:left_turn = True
+            # else: left_turn = False
+            # if right_lane_change >=1:right_turn = True
+            # else: right_turn = False
+
+            # white_tresh_lower_left = white_tresh_lower_left * ((bynary_left_pixel_percent + 0.15) / (target_left_pixel_percent + 0.15))
+            prev_error_pixel_percent_left = error_pixel_percent_left
+            error_pixel_percent_left = bynary_left_pixel_percent - target_left_pixel_percent
+            total_error_left = total_error_left + error_pixel_percent_left
+            tresh_factor_left = kp * error_pixel_percent_left + ki * total_error_left + kd * (error_pixel_percent_left - prev_error_pixel_percent_left)
+            white_tresh_lower_left = white_tresh_lower_left * pow(2, tresh_factor_left)
+            if white_tresh_lower_left >= 205: white_tresh_lower_left = 205
+            if white_tresh_lower_left <= 157: white_tresh_lower_left = 157
+
+            # white_tresh_lower_right = white_tresh_lower_right * ((bynary_right_pixel_percent + 0.15) / (target_right_pixel_percent + 0.15))
+            prev_error_pixel_percent_right = error_pixel_percent_right
+            error_pixel_percent_right = bynary_right_pixel_percent - target_right_pixel_percent
+            total_error_right = total_error_right + error_pixel_percent_right
+            tresh_factor_right = kp * error_pixel_percent_right + ki * total_error_right + kd * (error_pixel_percent_right - prev_error_pixel_percent_right)
+            white_tresh_lower_right = white_tresh_lower_right * pow(2, tresh_factor_right)
+            if white_tresh_lower_right >= 205: white_tresh_lower_right = 205
+            if white_tresh_lower_right <= 157: white_tresh_lower_right = 157
+
+            white_tresh_lower_half_sum = (white_tresh_lower_left + white_tresh_lower_right) / 2
+
+            print('error_pixel_percent_left =', error_pixel_percent_left, 'tresh_factor_left = ', tresh_factor_left, 'pow(2, tresh_factor_left) = ', pow(2, tresh_factor_left))
+            print('error_pixel_percent_right =', error_pixel_percent_right, 'tresh_factor_right = ', tresh_factor_right, 'pow(2, tresh_factor_right) = ', pow(2, tresh_factor_right))
+            add_debug_image2_b = True
+
+            yellow_bynary_in_left_lane_area = cv2.bitwise_and(yellow_mask_area_detect_morph, debug_images2[1])
+            yellow_bynary_in_right_lane_area = cv2.bitwise_and(yellow_mask_area_detect_morph, debug_images2[2])
+            bynary_yellow_pixel_percent = np.sum(yellow_mask_area_detect_morph) / view_area
+            yellow_bynary_in_left_lane_area_pixel_percent = np.sum(yellow_bynary_in_left_lane_area) / view_area
+            yellow_bynary_in_right_lane_area_pixel_percent = np.sum(yellow_bynary_in_right_lane_area) / view_area
+
+            # cv2.imshow('yellow_bynary_in_right_lane_area',cv2.cvtColor(yellow_bynary_in_right_lane_area*255,cv2.COLOR_GRAY2BGR))
+            target_yellow_pixel_percent = 0.02
+
+            prev_error_pixel_percent_yellow = error_pixel_percent_yellow
+            error_pixel_percent_yellow = bynary_yellow_pixel_percent - target_yellow_pixel_percent
+            total_error_yellow = total_error_left + error_pixel_percent_yellow
+            tresh_factor_yellow = kp * error_pixel_percent_yellow + ki * total_error_yellow + kd * (error_pixel_percent_yellow - prev_error_pixel_percent_yellow)
+            yellow_s_tresh_lower = yellow_s_tresh_lower * pow(2, tresh_factor_yellow)
+            if yellow_s_tresh_lower >= 85: yellow_s_tresh_lower = 85
+            if yellow_s_tresh_lower <= 45: yellow_s_tresh_lower = 45
+
+            if (yellow_bynary_in_left_lane_area_pixel_percent >= target_left_pixel_percent / 4):
+                left_yellow_lane = True
+            else:
+                left_yellow_lane = False
+            if (yellow_bynary_in_right_lane_area_pixel_percent >= target_right_pixel_percent / 4):
+                right_yellow_lane = True
+            else:
+                right_yellow_lane = False
+
+            print('yellow_bynary_in_left_lane_area_pixel_percent = ', yellow_bynary_in_left_lane_area_pixel_percent, 'yellow_bynary_in_right_lane_area_pixel_percent = ', yellow_bynary_in_right_lane_area_pixel_percent)
+
+            roi_limit_L_2 = roi_limit_L
+            if roi_limit_L_2 >= viewsize[1] / 5 * 4 - (viewsize[1] // 5) * 3 - 1: roi_limit_L_2 = int(viewsize[1] / 5 * 4 - (viewsize[1] // 5) * 3 - 1)
+            roi_limit_R_2 = roi_limit_R
+            if roi_limit_R_2 >= viewsize[1] / 5 * 4 - (viewsize[1] // 5) * 3 - 1: roi_limit_R_2 = int(viewsize[1] / 5 * 4 - (viewsize[1] // 5) * 3 - 1)
+
+            # bynary_left_upside_pixel_percent = np.sum(bynary_all_window_image_left_area_2[roi_limit_L_2 : int((viewsize[1] // 5) * 3 - 1 + roi_limit_L_2), :]) / view_area
+            # bynary_right_upside_pixel_percent = np.sum(bynary_all_window_image_right_area_2[roi_limit_R_2 : int((viewsize[1] // 5) * 3 - 1 + roi_limit_R_2), :]) / view_area
+            # cv2.imshow('1',bynary_window_image_right_area*255)
+            # cv2.imshow('2',bynary_window_image_right_area[roi_limit_L_2 : int((viewsize[1] // 5) * 3 - 1 + roi_limit_L_2), :]*255)
+            # if bynary_left_upside_pixel_percent < full_line_target_percent / 6.5 and bynary_right_upside_pixel_percent > target_right_pixel_percent / 2:
+            #     following_right_lane = True
+            #     following_left_lane = False
+            #     print('following_right_lane = ', following_right_lane, '****', '  bynary_left_upside_pixel_percent = ', bynary_left_upside_pixel_percent)
+            # elif bynary_right_upside_pixel_percent < full_line_target_percent / 6.5 and bynary_left_upside_pixel_percent > target_left_pixel_percent / 2:
+            #     following_right_lane = False
+            #     following_left_lane = True
+            #     print('following_left_lane = ', following_left_lane, '****', '  bynary_right_upside_pixel_percent= ', bynary_right_upside_pixel_percent)
+            # else:
+            #     following_right_lane = False
+            #     following_left_lane = False
+            #     print('not_line_following  :: bynary_left_upside_pixel_percent , bynary_right_upside_pixel_percent = ', bynary_left_upside_pixel_percent, ' , ',bynary_right_upside_pixel_percent)
+
+            # bynary_all_window_image_left_area_2[:, int(viewsize[0] // 2 - road_width / PIXEL_CONVERSION_RATE / 4 - 1):int(viewsize[0] // 2 + road_width / PIXEL_CONVERSION_RATE / 4 - 1)] = 0
+            # bynary_all_window_image_left_area_2[:, :int(viewsize[0] // 2 - (road_width / 2 + 1) / PIXEL_CONVERSION_RATE - 1)] = 0
+            # bynary_all_window_image_left_area_2[:, int(viewsize[0] // 2 + (road_width / 2 + 1) / PIXEL_CONVERSION_RATE - 1):] = 0
+
+            bynary_left_upside_pixel_percent = np.sum(bynary_all_window_image_left_area_2) / view_area
+            bynary_right_upside_pixel_percent = np.sum(bynary_all_window_image_right_area_2) / view_area
+            if (bynary_left_upside_pixel_percent <= target_left_pixel_percent / 5 * 2) & (bynary_right_pixel_percent > target_right_pixel_percent / 3 * 2):
+                following_right_lane = True
+                following_left_lane = False
+                print('not follow window 1')
+            elif (bynary_right_upside_pixel_percent <= target_right_pixel_percent / 5 * 2) & (bynary_left_pixel_percent > target_left_pixel_percent / 3 * 2):
+                following_right_lane = False
+                following_left_lane = True
+                print('not follow window 2')
+            else:
+                following_right_lane = False
+                following_left_lane = False
+                print('not follow window 3 bynary_left_pixel_percent, bynary_right_pixel_percent = ', bynary_left_pixel_percent, ' , ', bynary_right_pixel_percent)
+
+    # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ1차 로스 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+
+    # if error == 0:
+    #     flaots.left_curv = lc
+    #     flaots.right_curv = rc
+    #     flaots.deviation = deviation
+    #     flaots.mid_point_vector = np.add(left_fit, right_fit) / 2
+    #     flaots.error = error
+    #     flaots.left_trun = left_turn
+    #     flaots.right_trun = right_turn
+    #
+    #     for i in range(23):
+    #         point_pixter = viewsize[1] / 23
+    #         flaots.testset.data[i] = point_pixter * PIXEL_CONVERSION_RATE * i
+    #         m = flaots.mid_point_vector[0] * (viewsize[1] - point_pixter * i) ** 2 + flaots.mid_point_vector[1] * (viewsize[1] - point_pixter * i) + flaots.mid_point_vector[2] - viewsize[0] / 2
+    #         flaots.testset.data[23 + i] = m * PIXEL_CONVERSION_RATE
+    #     self.prediction_pub.publish(flaots)
+
+    # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ2차 로스 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+
+    if error == 0:
+        undistored_image = np.copy(video_copy2)
+        color_stop_warp, newwarp, final_image, debug_images3 = plot_lanes_unwrap(viewsize, left_fit, right_fit, left_turn, right_turn, left_yellow_lane, right_yellow_lane, undistored_image, M_INV, stopx_base, roi_limit_M, roi_limit_L, roi_limit_R, originalsize, dst_pts, is_plot=False,
+                                                                                 add_debug_image=add_debug_image3)
+        # binary_detect_stop_morph_brg_3 = np.uint8(np.dstack((binary_detect_stop_morph_brg, binary_detect_stop_morph_brg, binary_detect_stop_morph_brg))*255)
+        base_stop_image_show = cv2.bitwise_and(color_stop_warp, binary_detect_stop_morph_brg)
+
+        base_stop_image_yellow = cv2.bitwise_and(color_stop_warp, yellow_mask_area_detect_morph)
+
+        # base_stop_image = cv2.cvtColor(base_stop_image_show, cv2.COLOR_BGR2GRAY)
+        length_stop_histogram, line_type, stopx_base, max_stop_histogram, bump_basex, bump_height = plot_stop_peak_hist(base_stop_image_show, base_stop_image_yellow, road_width, PIXEL_CONVERSION_RATE, is_plot=False)
+
+        if stopx_base > 20: stopx_base = stopx_base - 20
+
+        stop_deviation = (viewsize[1] - stopx_base) * PIXEL_CONVERSION_RATE
+        base_stop_image_show = cv2.cvtColor(base_stop_image_show, cv2.COLOR_GRAY2BGR)
+        # cv2.imshow('base_stop_image_show', base_stop_image_show * 255)
+
+    if add_debug_image3:
+        if error == 0:
+            composed_image = np.copy(final_image)
+        else:
+            composed_image = np.copy(video_copy2)
+        # debug_images_all2 = list(itertools.chain.from_iterable(debug_images_all))
+        # composed_image = compose_debug_images(debug_images_all2)
+
+        left_pix_per_text = "lef_pix_per : " + "{:0.4f}".format(bynary_left_pixel_percent) + " in per"
+        right_pix_per_text = "Right_pix_per : " + "{:0.4f}".format(bynary_right_pixel_percent) + " in per"
+        L_target_pixel_percent = "L_target_pix_per : " + "{:0.4f}".format(target_left_pixel_percent) + " in per"
+        R_target_pixel_percent = "R_target_pix_per : " + "{:0.4f}".format(target_right_pixel_percent) + " in per"
+        deviation_text = "Deviation : " + "{:0.2f}".format(deviation) + " in m"
+        error_text = "Error_type : " + "{:}".format(error) + " in type"
+        # print(type(deviation),type(white_tresh_left))
+        white_tresh_lower_left_text = "tresh_left : " + "{:0.2f}".format(white_tresh_lower_left) + " "
+        white_tresh_lower_right_text = "tresh_right : " + "{:0.2f}".format(white_tresh_lower_right) + " "
+        following_lane_text = "fallowing : " + " fair"
+        #flaots.fair_state = 1
+        if following_left_lane:
+            following_lane_text = "fallowing : " + " left"
+            #flaots.fair_state = 0
+
+        if following_right_lane:
+            following_lane_text = "fallowing : " + " right"
+            #flaots.fair_state = 2
+
+        loop_text = "loop : " + "{:}".format(loop) + " "
+        half_sum_pixel_per_text = "half_sum_pix_per : " + "{:0.4f}".format(bynary_half_sum_pixel_percent) + " in per"
+        target_half_sum_pixel_percent_text = "half_sum_target : " + "{:0.4f}".format(target_half_sum_pixel_percent) + " in per"
+        top_offset_text = "top_offset : " + "{:0.1f}".format(top_offset) + " in m"
+        mid_offset_text = "mid_offset : " + "{:0.1f}".format(mid_offset) + " in m"
+        bot_offset_text = "bot_offset : " + "{:0.1f}".format(bot_offset) + " in m"
+        tresh_factor_right_text = "tresh_factor_right : " + "{:0.3f}".format(tresh_factor_right) + " "
+        left_fit_deg_ave_text = "L_fit_deg_ave : " + "{:0.3f}".format(abs(left_fit_deg_ave)) + "in deg"
+        center_fit_deg_ave_text = "M_fit_deg_ave : " + "{:0.3f}".format(abs(center_fit_deg_ave)) + "in deg"
+        right_fit_deg_ave_text = "R_fit_deg_ave : " + "{:0.3f}".format(abs(right_fit_deg_ave)) + "in deg"
+        deviation_stop_text = "Stop_Deviation : " + "{:0.2f}".format(stop_deviation) + " in m"
+        length_stop_histogram_text = "length_stop_histogram : " + "{:0.2f}".format(length_stop_histogram)
+        line_type_text = "line_type : " + "{:}".format(line_type)
+        if line_type == 0: line_type_text = "line_type : " + "{:0.2f} / clean_line".format(line_type)
+        if line_type == 1: line_type_text = "line_type : " + "{:0.2f} / not_stop_line".format(line_type)
+        if line_type == 2: line_type_text = "line_type : " + "{:0.2f} / stop_line".format(line_type)
+        if line_type == 3: line_type_text = "line_type : " + "{:0.2f} / yellow_line".format(line_type)
+        max_stop_histogram_text = "max_s_hist : " + "{:0.2f}".format(max_stop_histogram)
+        center_fit_mid_normal_grad_text = "m_normal_grad : " + "{:0.2f}".format(center_fit_mid_normal_grad)
+        yellow_s_tresh_lower_text = "yellow_tresh : " + "{:}".format(yellow_s_tresh_lower)
+
+        fontScale = 1
+        thickness = 2
+        fontFace = cv2.FONT_ITALIC
+
+        cv2.putText(composed_image, left_pix_per_text, (10, 50), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, right_pix_per_text, (10, 90), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, L_target_pixel_percent, (10, 130), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, R_target_pixel_percent, (10, 170), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        if error == 0:
+            cv2.putText(composed_image, error_text, (10, 210), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        else:
+            cv2.putText(composed_image, error_text, (10, 210), fontFace, fontScale, (0, 0, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, deviation_text, (10, 250), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, loop_text, (10, 290), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, deviation_stop_text, (10, 330), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, length_stop_histogram_text, (10, 370), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, line_type_text, (10, 410), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, max_stop_histogram_text, (10, 450), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+
+        cv2.putText(composed_image, half_sum_pixel_per_text, (580, 50), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, target_half_sum_pixel_percent_text, (580, 90), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, white_tresh_lower_left_text, (580, 130), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, white_tresh_lower_right_text, (580, 170), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, following_lane_text, (580, 210), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, top_offset_text, (580, 250), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, mid_offset_text, (580, 290), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, bot_offset_text, (580, 330), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, tresh_factor_right_text, (580, 370), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, left_fit_deg_ave_text, (580, 410), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, center_fit_deg_ave_text, (580, 450), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, right_fit_deg_ave_text, (580, 490), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+        cv2.putText(composed_image, yellow_s_tresh_lower_text, (580, 530), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
+
+    # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ차선 좌표 검출ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+
+    # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡcv2.imshow 이미지 쇼 컨트롤센터 ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+    imshow_scale_1 = 0.3
+    imshow_scale_2 = 0.6
+
+    # cv2.imshow('video_copy1_PTtrans_blur_normalize4hsv', video_copy1_PTtrans_blur_normalize4hsv)  # 투상변환 영상
+    # video_copy1_PTtrans_resized = cv2.resize(video_copy1_PTtrans, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+    # cv2.imshow('video_copy1_PTtrans_resized', video_copy1_PTtrans_resized)
+
+    # gray_image = cv2.cvtColor(video_copy1_PTtrans_blur_normalize4hsv, cv2.COLOR_BGR2GRAY)
+    # gray_image_resized = cv2.resize(gray_image, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+    # cv2.imshow('gray_image_resized',gray_image_resized)
+
+    # cv2.imshow('left', binary_detect_morph_brg_left) #왼쪽 차선 기준 임계값 이진화
+    # binary_detect_morph_brg_left_resized = cv2.resize(binary_detect_morph_brg_left, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+    # cv2.imshow('left', binary_detect_morph_brg_left_resized)
+
+    # cv2.imshow('right', binary_detect_morph_brg_right) #오른쪽 차선 기준 임계값 이진화
+    # binary_detect_morph_brg_right_resized = cv2.resize(binary_detect_morph_brg_right, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+    # cv2.imshow('right', binary_detect_morph_brg_right_resized)
+
+    # cv2.imshow('binary_detect_morph_brg_half_sum', binary_detect_morph_brg_half_sum) # 각각 기준 임계값 이진화 영상을 반반 합친 영상
+    binary_detect_morph_brg_half_sum_resized = cv2.resize(binary_detect_morph_brg_half_sum * 255, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+    cv2.imshow('half_sum_resized', binary_detect_morph_brg_half_sum_resized)  # 필
+
+    # cv2.imshow('final_line_color', final_line_color) #투상변환 + 블러, 정규화 + 최종 추출 영상 컬러 버전
+    final_line_color_resized = cv2.resize(final_line_color, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+    cv2.imshow('color_resized', final_line_color_resized)  # 필
+
+    # cv2.imshow('final_line_bynary_full', final_line_bynary_full) #두 차선을 구분하지 않고 임계값을 계산한 영상 (사용하지않음)
+    # cv2.imshow('final_line_bynary_half_sum', final_line_bynary_half_sum)  # 투상변환 + 블러, 정규화 + 최종 추출 영상 이진화 버전 # 최종적으로 추세선 감지 함수에 사용되는 영상 # binary_detect_morph_brg_half_sum 이것과 컬러 영역 이진화 영상을 합친 것
+    # final_line_bynary_half_sum_resized = cv2.resize(final_line_bynary_half_sum, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1)))) # 최종적으로 추세선 감지 함수에 사용되는 영상
+    # cv2.imshow('final_line_bynary_half_sum_resized', final_line_bynary_half_sum_resized)
+
+    # video_copy1_PTtrans_resized = cv2.resize(video_copy1_PTtrans, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+    # cv2.imshow('video_copy1_PTtrans_resized', video_copy1_PTtrans_resized)
+
+    video_copy1_PTtrans_copy1_to_draw_expected_lane = np.copy(video_copy1_PTtrans)
+    cv2.line(video_copy1_PTtrans_copy1_to_draw_expected_lane, (int(straght_lane_left[0][0]), int(straght_lane_left[0][1])), (int(straght_lane_left[1][0]), int(straght_lane_left[1][1])), [0, 255, 0], 2)
+    cv2.line(video_copy1_PTtrans_copy1_to_draw_expected_lane, (int(straght_lane_right[0][0]), int(straght_lane_right[0][1])), (int(straght_lane_right[1][0]), int(straght_lane_right[1][1])), [0, 255, 0], 2)
+    cv2.line(video_copy1_PTtrans_copy1_to_draw_expected_lane, (int(vertical_lane[0][0]), int(vertical_lane[0][1])), (int(vertical_lane[1][0]), int(vertical_lane[1][1])), [0, 255, 0], 2)
+    # cv2.imshow('video_copy1_PTtrans_copy1_to_draw_expted_lane', video_copy1_PTtrans_copy1_to_draw_expected_lane)
+    video_copy1_PTtrans_copy1_to_draw_expected_lane_resized = cv2.resize(video_copy1_PTtrans_copy1_to_draw_expected_lane, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+    cv2.imshow('expected_lane', video_copy1_PTtrans_copy1_to_draw_expected_lane_resized)  # 필
+    draw_expected_line_reverse, draw_expected_line_reverse_window_mix = Show_Original_Window_Mix(video_copy1_PTtrans_copy1_to_draw_expected_lane, video_copy1, src_pts_yfix, dst_pts, originalsize)
+    draw_expected_line_reverse_window_mix_resized = cv2.resize(draw_expected_line_reverse_window_mix, dsize=(int(round(originalsize[0] * imshow_scale_2)), int(round(originalsize[1] * imshow_scale_2))))
+    cv2.imshow('reverse_expected_lane', draw_expected_line_reverse_window_mix_resized)  # 필
+
+    # video_copy1_PTtrans_copy1_to_draw_expted_lane_resized = cv2.resize(video_copy1_PTtrans_copy1_to_draw_expted_lane, dsize=(round(video_copy1_PTtrans_copy1_to_draw_expted_lane.shape[1] * imshow_scale_1 ), round(video_copy1_PTtrans_copy1_to_draw_expted_lane.shape[0] * imshow_scale_1 )))
+    # cv2.imshow('video_copy1_PTtrans_copy1_to_draw_expted_lane_resized', video_copy1_PTtrans_copy1_to_draw_expted_lane_resized)
+
+    # if error != 0:
+    if add_debug_image1_a == 1:
+        sliding_window = np.copy(debug_images1[0])  # 슬라이딩 윈도우  # = debug_images[0]  # 여기서 debug_images 는 이진화영역과 좌표 추출 windows 영역과 그 안에서 검출된 픽셀들 그리고 추세선을 시각화 한 것이다.
+        sliding_window_resized = cv2.resize(sliding_window, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+        cv2.imshow('sliding_window_resized', sliding_window_resized)  # 바이너리 및 차선 영역
+
+    if add_debug_image2_a == 1:
+        bynary_and_red_blue_and_poly_area = np.copy(debug_images2[0])  # = debug_images[1] 추세선 # 0718-[0](bynary_and_red_blue)를 없애서 [0]이 추세선이됨 # 여기서 debug_images[0]은 이진화 영역과 좌표 추출 영역 안에 포함된 픽셀들을 파랑,빨강,흰색으로 보여주는 이미지이구 [1] 추세선을 시각화 한 것이다
+        # cv2.imshow('bynary_and_red_blue_and_poly_area', bynary_and_red_blue_and_poly_area) # 바이너리 영역에서 추세선과 그 영역 표시 이미지
+        bynary_and_red_blue_and_poly_area_resized = cv2.resize(bynary_and_red_blue_and_poly_area, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+        cv2.imshow('poly_area', bynary_and_red_blue_and_poly_area_resized)  # 필
+        # video_window_PTtrans_reverse, video_original_window_mix = Show_Original_Window_Mix(bynary_and_red_blue_and_poly_area, video_copy1, src_pts_yfix, dst_pts, originalsize)
+
+        red_blue = np.copy(debug_images2[5])
+        red_blue_reized = cv2.resize(red_blue, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+        cv2.imshow('red_blue_reized', red_blue_reized)
+
+        binary_all_left_gray_resized = cv2.resize(binary_all_left_gray, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+        binary_all_right_gray_resized = cv2.resize(binary_all_right_gray, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+        cv2.imshow('binary_all_left_gray_resized', binary_all_left_gray_resized * 255)
+        cv2.imshow('binary_all_right_gray_resized', binary_all_right_gray_resized * 255)
+
+    # video_window_PTtrans_reverse, video_original_window_mix = Show_Original_Window_Mix(bynary_and_red_blue_and_poly_area, video_copy1, src_pts_yfix, dst_pts, originalsize)
+    # cv2.imshow('video_window_PTtrans_reverse', video_window_PTtrans_reverse)  # 차선 좌표 추세선 함수와 검출창이 포함된 이미지를 역투상변환 한 이미지
+    # cv2.imshow('video_original_window_mix', video_original_window_mix)  # 차선 좌표 추세선 함수와 검출창이 포함된 이미지를 역투상변환 한 이미지와 원본 영상 모두 보이는 이미지
+    # if add_debug_image2_b == True:
+    # cv2.imshow('bynary_window_image_area', bynary_window_image_area)
+    # bynary_window_image_area_resized = cv2.resize(bynary_window_image_area, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+    # cv2.imshow('bynary_window_image_area_resized', bynary_window_image_area_resized)
+
+    # bynary_window_image_left_area_resized = cv2.resize(bynary_window_image_left_area, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+    # bynary_window_image_right_area_resized = cv2.resize(bynary_window_image_right_area, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+    # cv2.imshow('bynary_window_image_left_area_resized', bynary_window_image_left_area_resized)  # 차선 검출 영역 안의 픽셀들만 보여주는 이미지
+    # cv2.imshow('bynary_window_image_right_area_resized', bynary_window_image_right_area_resized)
+
+    if add_debug_image3:
+        # cv2.imshow('composed_image', composed_image)  # 필 # 차선을 초록색으로 덮은 이미지에 곡률과 편차를 화면에 택스트를 표시한 이미지
+        composed_image_resized = cv2.resize(composed_image, dsize=(int(round(originalsize[0] * imshow_scale_2)), int(round(originalsize[1] * imshow_scale_2))))
+        cv2.imshow('composed_image_resized', composed_image_resized)  # 필
+
+        # out.write(video_copy1_PTtrans)
+
+        # if error == 0:
+        # cv2.imshow('final_image',final_image) # 차선 영역을 초록색으로 색칠한 이미지
+        # warped_new = np.copy(debug_images3[0])  # 투상변환 화면에서의 초록색으로 덮은 이미지와 점선 영역
+        # warped_new_resized = cv2.resize(warped_new, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
+        # cv2.imshow('warped_new', warped_new)
+        # cv2.imshow('warped_new_resized', warped_new_resized)
+
+    # stop = timeit.default_timer()
+    # print('time = ', stop - start)  # 걸림
+
+    # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡcv2.imshow 이미지 쇼 컨트롤센터 ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+
+    # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ2차 로스 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+    out.write(composed_image)
+
+    return error, left_fit, right_fit, following_left_lane, following_right_lane, roi_limit_L, roi_limit_M, roi_limit_R, line_type, bump_basex, bump_height, left_turn, right_turn, total_error_left, total_error_right, total_error_half_sum, white_tresh_lower_left, white_tresh_lower_right, yellow_s_tresh_lower, stopx_base, composed_image, lc, rc, deviation
 
 
 # cv brigde sub,pub
@@ -1332,6 +1910,8 @@ class image_converter:
 
         # self.image_sub = rospy.Subscriber("image_topic",Image,self.callback)
 
+        
+
     def get_image(self):
         try:
             data = rospy.wait_for_message("usb_cam/image_raw", Image)
@@ -1347,17 +1927,170 @@ class image_converter:
         #        except CvBridgeError as e:
         return cv_image
 
-    def lanetracker(self):
-        global PT_view_width_2, PT_view_height_2, flaots, error, total_error_left, total_error_right, total_error_half_sum, error_pixel_percent_left, error_pixel_percent_right, error_pixel_percent_half_sum, white_tresh_lower_left, white_tresh_lower_right, white_tresh_lower_half_sum, lower_offset, upper_offset, lc, rc, deviation, left_fit, right_fit, PIXEL_CONVERSION_RATE, left_turn, right_turn, left_yellow_lane, right_yellow_lane, yellow_s_tresh_lower, following_right_lane, following_left_lane, proper_size, final_error
-        rospy.init_node('image_converter', anonymous=True)
-        video = self.get_image()
-        #video = cv2.resize(video, dsize=(1280, 720))
-
-        # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡros 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-
+        
+    def get_image_convert(self, n, m, video, src_pts_yfix, dst_pts, viewsize, white_tresh_lower_left, white_tresh_lower_right, white_tresh_lower_half_sum, white_tresh_lower_stop, yellow_s_tresh_lower, zero_1, zero_3, switch_1_out, switch_2_in, img_pipe_send, video_pipe_receive):
+        print('pid = ', os.getpid(), ' id(m) = ', id(m))
+        #cam = cv2.VideoCapture(0)
         loop = 0
-        originalsize = (video.shape[1], video.shape[0])  # h, w, d = video.shape
-        print(originalsize)
+        
+        # switch_1_in, switch_1_out = Pipe()
+        # switch_2_in, switch_2_out = Pipe()
+        # img_pipe_send, img_pipe_receive = Pipe()
+
+        # switch_msg = 0
+
+        while True:  # @@@@@@@@@@@@@@@@@@@@영상출력루프 시작@@@@@@@@@@@@@@@@@@@@@@
+            try:
+                video = np.copy(video_pipe_receive.recv())
+                print('type = ', type(video))
+                switch_msg = switch_1_out.recv()
+                print('switch_msg = ', switch_msg)
+            except EOFError:
+                print('sibal1')
+                break
+            print('sibal2')
+            if switch_msg == 1:
+                switch_msg = 0
+                print('sibal3')
+                print('type = ', type(video))
+                loop += 1
+                print('loop_count : ', loop)
+
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
+                #video = cv2.resize(video, dsize=(1280, 720))
+                print('sibal31')
+                video_copy1 = np.copy(video)  # 편집용 video copy1
+                video_copy2 = np.copy(video)  # 편집용 video copy2 circle 넣을 거
+                print('sibal32')
+                video_copy1_PTtrans, video_copy2 = PTtrans_and_Circle(video_copy1, video_copy2, src_pts_yfix, dst_pts, viewsize)
+                print('sibal3211')
+                video_copy1_PTtrans_blur_normalize4hsv = Blur_and_Normalize(video_copy1_PTtrans)  # 영상 블러처리 및 정규화
+                print('sibal3212')
+                video_copy1_Gray = cv2.cvtColor(video_copy1_PTtrans_blur_normalize4hsv, cv2.COLOR_BGR2GRAY)
+                print('sibal3213')
+                lower_yellow = (6, yellow_s_tresh_lower, 90)  # HSV 컬러 영억 검출 임계값 영역 (색상, 채도, 조도)
+                upper_yellow = (21, 255, 255)
+                # lower_yellow = (6, 50, 90)  # HSV 컬러 영억 검출 임계값 영역 (색상, 채도, 조도)
+                # upper_yellow = (21, 255, 255)
+                lower_blue = (80, 50, 180)
+                upper_blue = (115, 255, 255)
+                print('sibal321')
+                yellow_detect_morph_brg, yellow_mask_area_detect_morph = HSV_Detect(video_copy1_PTtrans_blur_normalize4hsv, lower_yellow, upper_yellow)  # HSV 컬러 영역 이진화 + 모폴로지 연산
+                blue_detect_morph_brg, blue_mask_area_detect_morph = HSV_Detect(video_copy1_PTtrans_blur_normalize4hsv, lower_blue, upper_blue)
+                # color_brg = cv2.bitwise_or(yellow_detect_morph_brg, blue_detect_morph_brg)  # 노랑 파랑 검출된 영역 합치기
+                color_brg = np.copy(yellow_detect_morph_brg)  # cv2.bitwise_or(yellow_detect_morph_brg, yellow_detect_morph_brg)  # 노랑 파랑 검출된 영역 합치기
+                # color_bynary = cv2.bitwise_or(yellow_mask_area_detect_morph, blue_mask_area_detect_morph)
+                color_bynary = np.copy(yellow_mask_area_detect_morph)  # cv2.bitwise_or(yellow_mask_area_detect_morph, yellow_mask_area_detect_morph)
+                white_tresh_left = [white_tresh_lower_left, 255]  # 흰색 차선 검출 임계값 영역(검출되는 영역이 너무 적으면 최솟값을 더 낮추면 됨)
+                # white_tresh_left = [135, 255]  # 흰색 차선 검출 임계값 영역(검출되는 영역이 너무 적으면 최솟값을 더 낮추면 됨)
+                white_tresh_right = [white_tresh_lower_right, 255]
+                # white_tresh_right = [135, 255]
+                # white_tresh_full = [white_tresh_lower_full, 255]
+                white_tresh_stop = [white_tresh_lower_stop, 255]
+                print('sibal322')
+                binary_detect_morph_brg_left = White_binary(video_copy1_Gray, white_tresh_left)
+                binary_detect_morph_brg_right = White_binary(video_copy1_Gray, white_tresh_right)
+                binary_detect_stop_morph_brg = White_binary(video_copy1_Gray, white_tresh_stop)
+                # binary_detect_morph_brg_full = White_binary(video_copy1_PTtrans_blur_normalize4hsv, white_tresh_full)
+
+                binary_detect_morph_brg_half_sum = np.copy(zero_1)
+
+                binary_detect_morph_brg_half_sum[:, : binary_detect_morph_brg_half_sum.shape[1] // 2] = binary_detect_morph_brg_left[:, : binary_detect_morph_brg_left.shape[1] // 2]
+                binary_detect_morph_brg_half_sum[:, binary_detect_morph_brg_half_sum.shape[1] // 2:] = binary_detect_morph_brg_right[:, binary_detect_morph_brg_right.shape[1] // 2:]
+
+                # print('binary_detect_morph_brg_half_sum.shape = ',binary_detect_morph_brg_half_sum.shape)
+                final_line_color = Final_Bynary_Mix(color_brg, binary_detect_morph_brg_half_sum, blue_mask_area_detect_morph, yellow_mask_area_detect_morph)  # 컬러랑 흰색 검출 영역 합치기 #추세선 탐지에 사용한는 영상의 이진화를 하기 전단계
+                # final_line_bynary_left = cv2.bitwise_or(color_bynary, binary_detect_morph_brg_left)
+                # final_line_bynary_right = cv2.bitwise_or(color_bynary, binary_detect_morph_brg_right)
+
+                final_line_bynary_half_sum = cv2.bitwise_or(color_bynary, binary_detect_morph_brg_half_sum)  # 추세선 탐지에 사용되는 이진화 영상
+                # final_line_bynary_full = cv2.bitwise_or(color_bynary, binary_detect_morph_brg_full)
+                # print('sum bynary pixel = ', np.sum(final_line_bynary/255)/3/(final_line_bynary.shape[0]*final_line_bynary.shape[0]),'--',np.sum(final_line_bynary/255)/3)
+
+                # cv2.imshow('final_line_bynary_half_sum', final_line_bynary_half_sum* 255)
+
+                binary_all_left_gray = np.uint8(cv2.bitwise_or(color_bynary, binary_detect_morph_brg_left))
+                binary_all_right_gray = np.uint8(cv2.bitwise_or(color_bynary, binary_detect_morph_brg_right))
+                binary_all_half_sum_gray = np.uint8(cv2.bitwise_or(color_bynary, binary_detect_morph_brg_half_sum))
+                # cv2.imshow('11',binary_all_left_gray* 255)
+                print('sibal33')
+                send_image = []
+                send_image.append(binary_all_left_gray)  # 0
+                send_image.append(binary_all_right_gray)  # 1
+                send_image.append(binary_all_half_sum_gray)  # 2
+                send_image.append(binary_detect_morph_brg_left)  # 3
+                send_image.append(binary_detect_morph_brg_right)  # 4
+                send_image.append(binary_detect_morph_brg_half_sum)  # 5
+                send_image.append(binary_detect_stop_morph_brg)  # 6
+                send_image.append(yellow_mask_area_detect_morph)  # 7
+                send_image.append(video_copy1)  # 8
+                send_image.append(video_copy2)  # 9
+                send_image.append(final_line_color)  # 10 보기용
+                send_image.append(video_copy1_PTtrans)  # 11
+                print('sibal4')
+                # send_image.append(video_copy2)  # 8
+                
+                switch_2_in.send(1)
+                img_pipe_send.send(send_image)
+                print('sibal5')
+
+
+
+    def lanetracker(self):
+        rospy.init_node('image_converter', anonymous=True)
+        view_scale = 0.4
+        sight_height = 1.06  # 카메라 높이
+        target_distance = 19.35  # 11.25  # 목표 거리 (현재 목표 10m전방)
+        road_width = 3.5  # 차선 폭 (현재 3.5미터 실측 후 조정)
+        margin = 12  # 추가로 투상변환할 폭
+
+        focal_length_horizontal = 1.635  # sample_video(f_l_h = 0.4, f_l_v = 0.35)  C525(f_l_h = 0.515, f_l_v = 0.31(by0.1)) C930e(f_l_h = 0.35, f_l_v = 0.648)
+        focal_length_vertical = 1.635
+        view_length1_h = 1.42
+        view_length1_h_bot = 1.485
+        view_length2_v = 0.78
+
+        PIXEL_CONVERSION_RATE = 0.01 / view_scale  # 100픽셀당 1미터
+        ym_per_pix = 0.01 / view_scale  # meters per pixel in y dimension
+        xm_per_pix = 0.01 / view_scale  # meters per pixel in x dimension
+        lower_offset = road_width - 1.0  # 최소 차선 감지 폭
+        upper_offset = road_width + 1.5  # 최대 차선 감지 폭
+        kp = 2
+        ki = 0.0
+        kd = 0.7
+
+        proper_size = np.zeros([720, 1280, 3], dtype=np.uint8)
+        # proper_size = np.zeros([480, 640, 3], dtype=np.uint8)
+        # proper_size = np.copy(video)
+        # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ좌표 자동 지정ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+        src_pts_yfix, dst_pts, PT_view_width, PT_view_height, PT_view_width_2, PT_view_height_2, vertical_lane, straght_lane_left, straght_lane_right = find_proper_transper_point(proper_size, sight_height, target_distance, road_width, margin, view_scale, focal_length_horizontal,
+                                                                                                                                                                                   focal_length_vertical, view_length1_h, view_length1_h_bot, view_length2_v,
+                                                                                                                                                                                   PIXEL_CONVERSION_RATE)
+        M_INV = cv2.getPerspectiveTransform(dst_pts, src_pts_yfix)
+        viewsize = [PT_view_width, PT_view_height]
+        # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ좌표 자동 지정ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+
+        lc = 0.0
+        rc = 0.0
+        left_fit = []
+        right_fit = []
+        error = 0
+        bynary_pixel_percent = 0.02
+        error_pixel_percent_left = 0
+        total_error_left = 0
+        error_pixel_percent_right = 0
+        total_error_right = 0
+        error_pixel_percent_half_sum = 0
+        total_error_half_sum = 0
+        left_turn = 0
+        right_turn = 0
+        left_yellow_lane = 0
+        right_yellow_lane = 0
+        following_right_lane = False
+        following_left_lane = False
+        error_loop = 0
 
         bynary_left_pixel_percent = 0
         bynary_right_pixel_percent = 0
@@ -1367,685 +2100,136 @@ class image_converter:
         target_half_sum_pixel_percent = 0
         full_line_target_percent = 0.01
         error_pixel_percent_yellow = 0
-        error_loop = 0
-        center_fit_deg_ave = 0
-        tresh_factor_right = 0
-        white_tresh_lower_stop = 170
         stopx_base = 0
-        left_turn = 0
-        right_turn = 0
-        length_stop_histogram = 0
-        top_offset = 0
-        mid_offset = 0
-        bot_offset = 0
-        stop_deviation = 0
         line_type = 0
         bump_basex = 0
         bump_height = 0
         view_area = PT_view_width * PT_view_height
-        max_stop_histogram = 0
-        zero_1 = np.zeros((viewsize[1], viewsize[0])).astype(np.uint8)
-        zero_3 = np.zeros((viewsize[1], viewsize[0], 3)).astype(np.uint8)
-        center_fit_mid_normal_grad = 0
         roi_limit_M = 0
         roi_limit_L = 0
         roi_limit_R = 0
-        yellow_s_tresh_lower = 45
+
+        deviation = 0
+        top_offset = 0
+        mid_offset = 0
+        bot_offset = 0
+        tresh_factor_right = 0
         left_fit_deg_ave = 0
         center_fit_deg_ave = 0
         right_fit_deg_ave = 0
+        stop_deviation = 0
+        length_stop_histogram = 0
+        max_stop_histogram = 0
+        center_fit_mid_normal_grad = 0
 
-        # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡros 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+        white_tresh_lower_left = 160
+        white_tresh_lower_right = 160
+        white_tresh_lower_half_sum = 160
+        white_tresh_lower_stop = 170
+        yellow_s_tresh_lower = 50
+        zero_1 = np.zeros((viewsize[1], viewsize[0])).astype(np.uint8)
+        zero_3 = np.zeros((viewsize[1], viewsize[0], 3)).astype(np.uint8)
 
-        flaots.testset.layout.dim.append(MultiArrayDimension())
-        flaots.testset.layout.dim.append(MultiArrayDimension())
-        flaots.testset.layout.dim[0].label = "height"
-        flaots.testset.layout.dim[1].label = "width"
-        flaots.testset.layout.dim[0].size = 2
-        flaots.testset.layout.dim[1].size = 23
-        flaots.testset.layout.dim[0].stride = 2 * 23
-        flaots.testset.layout.dim[1].stride = 23
-        flaots.testset.layout.data_offset = 0
-        flaots.testset.data = np.zeros((46))
+        # size = (viewsize[0],viewsize[1]) #투상변환 한 영상 저장할 때
+        # fps = cam.get(cv2.CAP_PROP_FPS)
+        fps = 30
+        fourcc = cv2.VideoWriter_fourcc(*'DIVX')  # 영상 저장 코덱 지정
+        filename = 'line_detect.avi'  # 저장될 영상 이름 지정
+        # out = cv2.VideoWriter(filename, fourcc, fps, (viewsize[0], viewsize[1])) #sizn(가로,세로) #영상 저장 설정 세팅
+        out = cv2.VideoWriter(filename, fourcc, fps, (proper_size.shape[1], proper_size.shape[0]))  # sizn(가로,세로) #영상 저장 설정 세팅
+        # plt.ion() #plot을 실시간으로 보여주게 해주는 함수
 
-        dstride0 = flaots.testset.layout.dim[0].stride
-        dstride1 = flaots.testset.layout.dim[1].stride
-        offset = flaots.testset.layout.data_offset
+        switch_1_in, switch_1_out = Pipe()
+        switch_2_in, switch_2_out = Pipe()
+        img_pipe_send, img_pipe_receive = Pipe()
+        video_pipe_send, video_pipe_receive = Pipe()
 
-        plt.ion()
+        loop = 0
+        p_list = []
+        m = 10000
+        print('siball1')
+        video = self.get_image()
+        print('siball2')
+        
+        print('siball3')
+        process1 = Process(target=self.get_image_convert, args=(3, m, video, src_pts_yfix, dst_pts, viewsize, white_tresh_lower_left, white_tresh_lower_right, white_tresh_lower_half_sum, white_tresh_lower_stop, yellow_s_tresh_lower, zero_1, zero_3, switch_1_out, switch_2_in, img_pipe_send, video_pipe_receive))
+        process1.start()
+        p_list.append(process1)
+        
+        # img_pipe_send.close()
+        # switch_1_out.close()
+        # switch_2_in.close()
 
-        while True:  # @@@@@@@@@@@@@@@@@@@@영상출력루프 시작@@@@@@@@@@@@@@@@@@@@@@
-            video = self.get_image()
-            #video = cv2.resize(video, dsize=(1280, 720))
-# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ1차 로스 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-
-            video_copy1 = np.copy(video)  # 편집용 video copy1
-            video_copy2 = np.copy(video)  # 편집용 video copy2 circle 넣을 거
-            loop = loop + 1
-            error_loop = error_loop + 1
-            if error != 0:
-                error_loop = 0
-            if length_stop_histogram < 1.5: stopx_base = 0
-            print('---------------------loop count : ', loop)
-            print('---------------------error_loop : ', error_loop)
-
-            # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ참고용 코드(astype, dtype, shape 등)ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-            # binary_all_gray = binary_all_gray.astype(bool)
-            # print(binary_all_gray.shape,'-',binary_all_gray.dtype, '-', np.min(binary_all_gray) , '-' , np.max(binary_all_gray))
-            # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ참고용 코드(astype, dtype, shape 등)ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-
-            video_copy1_PTtrans, video_copy2 = PTtrans_and_Circle(video_copy1, video_copy2, src_pts_yfix, dst_pts, viewsize)
-            video_copy1_PTtrans_blur_normalize4hsv = Blur_and_Normalize(video_copy1_PTtrans)  # 영상 블러처리 및 정규화
-            video_copy1_Gray = cv2.cvtColor(video_copy1_PTtrans_blur_normalize4hsv, cv2.COLOR_BGR2GRAY)
-            lower_yellow = (6, yellow_s_tresh_lower, 90)  # HSV 컬러 영억 검출 임계값 영역 (색상, 채도, 조도)
-            upper_yellow = (21, 255, 255)
-            # lower_yellow = (6, 50, 90)  # HSV 컬러 영억 검출 임계값 영역 (색상, 채도, 조도)
-            # upper_yellow = (21, 255, 255)
-            lower_blue = (80, 50, 180)
-            upper_blue = (115, 255, 255)
-
-            yellow_detect_morph_brg, yellow_mask_area_detect_morph = HSV_Detect(video_copy1_PTtrans_blur_normalize4hsv, lower_yellow, upper_yellow)  # HSV 컬러 영역 이진화 + 모폴로지 연산
-            blue_detect_morph_brg, blue_mask_area_detect_morph = HSV_Detect(video_copy1_PTtrans_blur_normalize4hsv, lower_blue, upper_blue)
-            # color_brg = cv2.bitwise_or(yellow_detect_morph_brg, blue_detect_morph_brg)  # 노랑 파랑 검출된 영역 합치기
-            color_brg = np.copy(yellow_detect_morph_brg)  # cv2.bitwise_or(yellow_detect_morph_brg, yellow_detect_morph_brg)  # 노랑 파랑 검출된 영역 합치기
-            # color_bynary = cv2.bitwise_or(yellow_mask_area_detect_morph, blue_mask_area_detect_morph)
-            color_bynary = np.copy(yellow_mask_area_detect_morph)  # cv2.bitwise_or(yellow_mask_area_detect_morph, yellow_mask_area_detect_morph)
-            white_tresh_left = [white_tresh_lower_left, 255]  # 흰색 차선 검출 임계값 영역(검출되는 영역이 너무 적으면 최솟값을 더 낮추면 됨)
-            # white_tresh_left = [135, 255]  # 흰색 차선 검출 임계값 영역(검출되는 영역이 너무 적으면 최솟값을 더 낮추면 됨)
-            white_tresh_right = [white_tresh_lower_right, 255]
-            # white_tresh_right = [135, 255]
-            # white_tresh_full = [white_tresh_lower_full, 255]
-            white_tresh_stop = [white_tresh_lower_stop, 255]
-
-            binary_detect_morph_brg_left = White_binary(video_copy1_Gray, white_tresh_left)
-            binary_detect_morph_brg_right = White_binary(video_copy1_Gray, white_tresh_right)
-            binary_detect_stop_morph_brg = White_binary(video_copy1_Gray, white_tresh_stop)
-            # binary_detect_morph_brg_full = White_binary(video_copy1_PTtrans_blur_normalize4hsv, white_tresh_full)
-
-            binary_detect_morph_brg_half_sum = np.copy(zero_1)
-
-            binary_detect_morph_brg_half_sum[:, : binary_detect_morph_brg_half_sum.shape[1] // 2] = binary_detect_morph_brg_left[:, : binary_detect_morph_brg_left.shape[1] // 2]
-            binary_detect_morph_brg_half_sum[:, binary_detect_morph_brg_half_sum.shape[1] // 2:] = binary_detect_morph_brg_right[:, binary_detect_morph_brg_right.shape[1] // 2:]
-
-            # print('binary_detect_morph_brg_half_sum.shape = ',binary_detect_morph_brg_half_sum.shape)
-            final_line_color = Final_Bynary_Mix(color_brg, binary_detect_morph_brg_half_sum, blue_mask_area_detect_morph, yellow_mask_area_detect_morph)  # 컬러랑 흰색 검출 영역 합치기 #추세선 탐지에 사용한는 영상의 이진화를 하기 전단계
-            # final_line_bynary_left = cv2.bitwise_or(color_bynary, binary_detect_morph_brg_left)
-            # final_line_bynary_right = cv2.bitwise_or(color_bynary, binary_detect_morph_brg_right)
-
-            final_line_bynary_half_sum = cv2.bitwise_or(color_bynary, binary_detect_morph_brg_half_sum)  # 추세선 탐지에 사용되는 이진화 영상
-            # final_line_bynary_full = cv2.bitwise_or(color_bynary, binary_detect_morph_brg_full)
-            # print('sum bynary pixel = ', np.sum(final_line_bynary/255)/3/(final_line_bynary.shape[0]*final_line_bynary.shape[0]),'--',np.sum(final_line_bynary/255)/3)
-
-            if error != 0:
-                half_sum_pix_img = np.copy(binary_detect_morph_brg_half_sum)
-                half_sum_pix_img[:, int(half_sum_pix_img.shape[1] // 2 - road_width / PIXEL_CONVERSION_RATE / 4 - 1):int(half_sum_pix_img.shape[1] // 2 + road_width / PIXEL_CONVERSION_RATE / 4 - 1)] = 0
-                half_sum_pix_img[:, :int(half_sum_pix_img.shape[1] // 2 - (road_width / 2 + 1) / PIXEL_CONVERSION_RATE - 1)] = 0
-                half_sum_pix_img[:, int(half_sum_pix_img.shape[1] // 2 + (road_width / 2 + 1) / PIXEL_CONVERSION_RATE - 1):] = 0
-
-                bynary_half_sum_pixel_percent = np.sum(half_sum_pix_img) / (half_sum_pix_img.shape[0] * half_sum_pix_img.shape[1])
-                target_half_sum_pixel_percent = full_line_target_percent * 3
-                # white_tresh_lower_half_sum = white_tresh_lower_half * ((bynary_half_sum_pixel_percent + 0.5) / (target_half_sum_pixel_percent + 0.5))
-                prev_error_pixel_percent_half_sum = error_pixel_percent_half_sum
-                error_pixel_percent_half_sum = bynary_half_sum_pixel_percent - target_half_sum_pixel_percent
-                total_error_half_sum = total_error_half_sum + error_pixel_percent_half_sum
-                tresh_factor_half_sum = kp * error_pixel_percent_half_sum + ki * total_error_half_sum + kd * (error_pixel_percent_half_sum - prev_error_pixel_percent_half_sum)
-                white_tresh_lower_half_sum = white_tresh_lower_half_sum * pow(2, tresh_factor_half_sum)
-                if white_tresh_lower_half_sum >= 205: white_tresh_lower_half_sum = 205
-                if white_tresh_lower_half_sum <= 157: white_tresh_lower_half_sum = 157
-
-                white_tresh_lower_left = white_tresh_lower_half_sum
-                white_tresh_lower_right = white_tresh_lower_half_sum
-
-                print('white_tresh_lower_half_sum = ', white_tresh_lower_half_sum, '   bynary_half_sum_pixel_percent = ', bynary_half_sum_pixel_percent)
-
-            # HSV_Tresh_Trace(video_copy1_PTtrans_blur_normalize4hsv) #노랑, 파랑 임계값 추적용 코드
-
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+        switch_1_in.send(1)
+        video_pipe_send.send(video)
+        print('send')
+        while True:
+            
+            try:
+                switch_msg = switch_2_out.recv()
+                print('switch_msg = ', switch_msg)
+            except EOFError:
                 break
-            # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ차선 좌표 검출ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
 
-            # binary_all_left = np.zeros_like(binary_detect_morph_brg_left)
-            # binary_all_right = np.zeros_like(binary_detect_morph_brg_right)
-            # binary_all_half_sum = np.zeros_like(binary_detect_morph_brg_half_sum)
-            # binary_all_left[(color_bynary == 255) | (binary_detect_morph_brg_left == 255)] = 1
-            # binary_all_right[(color_bynary == 255) | (binary_detect_morph_brg_right == 255)] = 1
-            # binary_all_half_sum[(color_bynary == 255) | (binary_detect_morph_brg_half_sum == 255)] = 1
-            # binary_all_left_gray = cv2.cvtColor(binary_all_left, cv2.COLOR_BGR2GRAY)  # 1채널의 0, 1 boolean data_type
-            # binary_all_right_gray = cv2.cvtColor(binary_all_right, cv2.COLOR_BGR2GRAY)
-            # binary_all_half_sum_gray = cv2.cvtColor(binary_all_half_sum, cv2.COLOR_BGR2GRAY)
+            if switch_msg == 1:
+                switch_msg = 0
+                switch_1_in.send(1)
+                video = self.get_image()
+                video_pipe_send.send(video)
+                loop += 1
 
-            binary_all_left_gray = np.uint8(cv2.bitwise_or(color_bynary, binary_detect_morph_brg_left))
-            binary_all_right_gray = np.uint8(cv2.bitwise_or(color_bynary, binary_detect_morph_brg_right))
-            binary_all_half_sum_gray = np.uint8(cv2.bitwise_or(color_bynary, binary_detect_morph_brg_half_sum))
-
-            # plt.clf() #plot초기화
-            add_debug_image1 = True
-            add_debug_image1_a = False
-            add_debug_image2 = True
-            add_debug_image2_a = False
-            add_debug_image2_b = False
-            add_debug_image3 = True
-
-            is_debug = True
-            debug_images_all = []
-            # plt.clf()
-            # plot_peak_hist(binary_all_gray, is_plot=True)
-            # plt.show()
-
-            if len(left_fit) == 0:
-                leftx_base, rightx_base, hist, error, inner_length = find_left_right_via_histogram(binary_all_half_sum_gray, road_width, PIXEL_CONVERSION_RATE, add_debug_image=False)  # 영상에서의 왼쪽 오른쪽 차선의 초기 위치를 뽑아내는 함수
-                if inner_length <= (road_width - 1) / PIXEL_CONVERSION_RATE: stopx_base = 0
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+                receive_image = img_pipe_receive.recv()
+                error, left_fit, right_fit, following_left_lane, following_right_lane, roi_limit_L, roi_limit_M, roi_limit_R, line_type, bump_basex, bump_height, left_turn, right_turn, total_error_left, total_error_right, total_error_half_sum, white_tresh_lower_left, white_tresh_lower_right, yellow_s_tresh_lower, stopx_base, composed_image, lc, rc, deviation = get_lane(
+                    receive_image, error, left_fit, right_fit, following_left_lane, following_right_lane, target_left_pixel_percent, target_right_pixel_percent, full_line_target_percent, roi_limit_L, roi_limit_M, roi_limit_R, line_type, bump_basex, bump_height, left_turn, right_turn,
+                    error_pixel_percent_left, error_pixel_percent_right, total_error_left, total_error_right, total_error_half_sum, error_pixel_percent_yellow, error_pixel_percent_half_sum, white_tresh_lower_left, white_tresh_lower_right, white_tresh_lower_half_sum, yellow_s_tresh_lower,
+                    PT_view_width, PT_view_height, loop, bynary_half_sum_pixel_percent, target_half_sum_pixel_percent, out, bynary_left_pixel_percent, bynary_right_pixel_percent, deviation, top_offset, mid_offset, bot_offset, tresh_factor_right, left_fit_deg_ave, center_fit_deg_ave,
+                    right_fit_deg_ave, stop_deviation, length_stop_histogram, max_stop_histogram, center_fit_mid_normal_grad, stopx_base, road_width, PIXEL_CONVERSION_RATE, lower_offset, upper_offset, zero_1, zero_3, viewsize, ym_per_pix, kp, ki, kd, M_INV, dst_pts, PT_view_width_2, PT_view_height_2, vertical_lane, straght_lane_left, straght_lane_right, src_pts_yfix)
 
                 if error == 0:
-                    left_fit, right_fit, debug_images1, error, following_left_lane, following_right_lane = find_ploy_fit_window_search(binary_all_half_sum_gray, leftx_base, rightx_base, following_left_lane, following_right_lane, road_width, PIXEL_CONVERSION_RATE, target_left_pixel_percent,
-                                                                                                                                       target_right_pixel_percent, full_line_target_percent, roi_limit_L, roi_limit_M, roi_limit_R, PT_view_height, stopx_base, nwindows=13,
-                                                                                                                                       margin=round(0.45 / PIXEL_CONVERSION_RATE), is_plot=False,
-                                                                                                                                       add_debug_image=add_debug_image1)  # 사각 영역을 만들어 차선을 탐지하고 추세선을 만드는 함수
-                    # if error == 0: #cv2.imshow('debug_images1', debug_images1[0])
-                    if (add_debug_image1) & (error == 0):
-                        add_debug_image1_a = 1
-                    if is_debug: print("stage 4 a.. done_1")
+                    flaots_for_mission.left_curv = lc
+                    flaots_for_mission.right_curv = rc
+                    flaots_for_mission.deviation = deviation
+                    flaots_for_mission.stop_deviation = stop_deviation
+                    flaots_for_mission.mid_point_vector = np.add(left_fit, right_fit) / 2
+                    flaots_for_mission.error = error
+                    flaots_for_mission.left_trun = left_turn
+                    flaots_for_mission.right_trun = right_turn
 
-            if error == 0:
-                left_fit, right_fit, lc, rc, deviation, debug_images2, error, following_left_lane, following_right_lane, top_offset, mid_offset, bot_offset, left_fit_deg_ave, center_fit_deg_ave, right_fit_deg_ave, roi_limit_L, roi_limit_M, roi_limit_R, center_fit_mid_normal_grad, roi_limit_bump = next_frame_find_poly_already_fitted(
-                    binary_all_left_gray, binary_all_right_gray, left_fit, right_fit, lower_offset,
-                    upper_offset, following_right_lane, following_left_lane,
-                    road_width, PIXEL_CONVERSION_RATE, error_loop, PT_view_height, stopx_base, zero_1, zero_3, line_type, bump_basex, bump_height,
-                    margin=round(0.3 / PIXEL_CONVERSION_RATE), is_plot=False,
-                    add_debug_image=add_debug_image2)
+                    for i in range(23):
+                        point_pixter = viewsize[1] / 23
+                        flaots.testset.data[i] = point_pixter * PIXEL_CONVERSION_RATE * i
+                        m = flaots_for_mission.mid_point_vector[0] * (viewsize[1] - point_pixter * i) ** 2 + flaots_for_mission.mid_point_vector[1] * (viewsize[1] - point_pixter * i) + flaots_for_mission.mid_point_vector[2] - viewsize[0] / 2
+                        flaots.testset.data[23 + i] = m * PIXEL_CONVERSION_RATE
+                    self.prediction_pub.publish(flaots)
+                    self.lane_identify_pub.publish(flaots_for_mission)
 
-                if error == 0:
-                    if add_debug_image2:
-                        add_debug_image2_a = 1
-                    if is_debug: print("stage 4 b.. done_2")
 
-                    if line_type == 3:
-                        binary_detect_morph_brg_right[roi_limit_bump[1]:roi_limit_bump[0]] = 0
-                        binary_detect_morph_brg_left[roi_limit_bump[1]:roi_limit_bump[0]] = 0
-                        # cv2.imshow('yellow_limit',binary_detect_morph_brg_right*255)
+                    if following_left_lane:
+                        following_lane_text = "fallowing : " + " left"
+                        flaots_for_mission.fair_state = 0
 
-                    bynary_window_image_left_area = cv2.bitwise_and(binary_detect_morph_brg_left, debug_images2[1])
-                    bynary_all_window_image_left_area = cv2.bitwise_and(binary_all_left_gray, debug_images2[1])
-                    bynary_all_window_image_left_area_2 = cv2.bitwise_and(binary_all_left_gray, debug_images2[3])
-                    bynary_window_image_right_area = cv2.bitwise_and(binary_detect_morph_brg_right, debug_images2[2])
-                    bynary_all_window_image_right_area = cv2.bitwise_and(binary_all_right_gray, debug_images2[2])
-                    bynary_all_window_image_right_area_2 = cv2.bitwise_and(binary_all_left_gray, debug_images2[4])
-
-                    # cv2.imshow('debug_images2[3]', debug_images2[3]*255)
-                    # cv2.imshow('debug_images2[4]', debug_images2[4]*255)
-
-                    bynary_left_pixel_percent = np.sum(bynary_window_image_left_area) / ((viewsize[0] - roi_limit_L - (roi_limit_bump[0] - roi_limit_bump[1])) * viewsize[1])
-                    bynary_right_pixel_percent = np.sum(bynary_window_image_right_area) / ((viewsize[0] - roi_limit_R - (roi_limit_bump[0] - roi_limit_bump[1])) * viewsize[1])
-
-                    dotted_line_target_percent = 0.0038
-                    full_line_target_percent = 0.01
-
-                    if left_turn == True:
-                        target_left_pixel_percent = dotted_line_target_percent
+                    elif following_right_lane:
+                        following_lane_text = "fallowing : " + " right"
+                        flaots_for_mission.fair_state = 2
                     else:
-                        target_left_pixel_percent = full_line_target_percent
-                    if right_turn == True:
-                        target_right_pixel_percent = dotted_line_target_percent
-                    else:
-                        target_right_pixel_percent = full_line_target_percent
+                        flaots_for_mission.fair_state = 1
 
-                    # left_gray, _, _ = cv2.split(bynary_window_image_left_area)
-                    # right_gray, _, _ = cv2.split(bynary_window_image_right_area)
-                    # cv2.imshow('bynary_window_image_right_area',bynary_window_image_right_area)
-                    left_lane_list = np.sum(bynary_all_window_image_left_area, axis=1) >= 1
-                    left_lane_list_blank = np.sum(bynary_all_window_image_left_area, axis=1) == 0
-                    right_lane_list = np.sum(bynary_all_window_image_right_area, axis=1) >= 1
-                    right_lane_list_blank = np.sum(bynary_all_window_image_right_area, axis=1) == 0
-                    # print('left_lane_list = ',left_lane_list)
-                    check_change = np.zeros((viewsize[1], viewsize[0], 3))
+        # switch_1_in.close()
+        # switch_1_out.colse()
+        # switch_2_in.close()
+        # switch_2_out.colse()
+        # img_pipe_send.close()
+        # img_pipe_receive.colse()
+        out.release()
+        cv2.destroyAllWindows()
 
-                    for i in range(len(left_lane_list)):
-                        if left_lane_list[i] == True:
-                            check_change[i, :, :] = 255
+        process1.join()
+        process1.close()
 
-                    # cv2.imshow('check_change', check_change)
+        print('Exit')
 
-                    length_of_lane = 0
-                    length_of_lane_blank = 0
-                    last_lane = 0
-                    check_sibal = 0
-                    left_lane_change = 0
-                    right_lane_change = 0
-                    dotted_line_length = 2.5
-                    str_line = 6
-                    lane_storage = []
-
-                    a_L = 0
-                    b_L = 0
-                    a_R = 0
-                    b_R = 0
-
-                    print('len(left_lane_list) = ', len(left_lane_list))
-                    for i in range(len(left_lane_list)):
-                        length_of_lane = length_of_lane + left_lane_list[i]
-                        length_of_lane_blank = length_of_lane_blank + left_lane_list_blank[i]
-                        a_L = a_L + left_lane_list[i] * PIXEL_CONVERSION_RATE
-                        b_L = b_L + left_lane_list_blank[i] * PIXEL_CONVERSION_RATE
-                        if last_lane != left_lane_list[i]:
-                            check_sibal = check_sibal + 1
-                            print('sibal1 = ', check_sibal)
-                        last_lane = left_lane_list[i]
-                        if (check_sibal >= 4) & (length_of_lane_blank < 1.5 / PIXEL_CONVERSION_RATE):
-                            length_of_lane_blank = 0
-                            check_sibal = 0
-                            print('left_noise_blank')
-                        if (check_sibal >= 4) & (length_of_lane < 1.5 / PIXEL_CONVERSION_RATE):
-                            length_of_lane = 0
-                            check_sibal = 0
-                            print('left_noise_lane')
-                        if (check_sibal >= 1) & (left_lane_list[i] == 0) & (length_of_lane > dotted_line_length / PIXEL_CONVERSION_RATE) & (length_of_lane_blank > 2 / PIXEL_CONVERSION_RATE):
-                            lane_storage.append(length_of_lane)
-                            length_of_lane = 0
-                            check_sibal = 0
-                            print('left_have_append')
-                        if length_of_lane > str_line / PIXEL_CONVERSION_RATE:
-                            left_turn = False
-                            lane_storage = []
-                            print('left_long_lane')
-                            break
-                    if len(lane_storage) >= 1:
-                        if max(lane_storage) >= str_line / PIXEL_CONVERSION_RATE:
-                            left_turn = False
-                            print('left_long_lane2')
-                            print('L_max(lane_storage) = ', max(lane_storage) * PIXEL_CONVERSION_RATE)
-                        elif (max(lane_storage) < str_line / PIXEL_CONVERSION_RATE):
-                            left_turn = True
-                            print('left_short_lane')
-                            print('L_max(lane_storage) = ', max(lane_storage) * PIXEL_CONVERSION_RATE)
-
-                    print('a_L = ', a_L)
-                    print('b_L = ', b_L)
-                    check_sibal = 0
-                    length_of_lane = 0
-                    length_of_lane_blank = 0
-                    lane_storage = []
-                    for i in range(len(right_lane_list)):
-                        length_of_lane = length_of_lane + right_lane_list[i]
-                        length_of_lane_blank = length_of_lane_blank + right_lane_list_blank[i]
-                        a_R = a_R + left_lane_list[i] * PIXEL_CONVERSION_RATE
-                        b_R = b_R + left_lane_list_blank[i] * PIXEL_CONVERSION_RATE
-                        if last_lane != right_lane_list[i]:
-                            check_sibal = check_sibal + 1
-                            print('sibal2 = ', check_sibal)
-                        last_lane = right_lane_list[i]
-                        if (check_sibal >= 4) & (length_of_lane_blank < 1.5 / PIXEL_CONVERSION_RATE):
-                            length_of_lane_blank = 0
-                            check_sibal = 0
-                            print('right_noise_blank')
-                        if (check_sibal >= 4) & (length_of_lane < 1.5 / PIXEL_CONVERSION_RATE):
-                            length_of_lane = 0
-                            check_sibal = 0
-                            print('right_noise_lane')
-                        if (check_sibal >= 1) & (right_lane_list[i] == 0) & (length_of_lane > dotted_line_length / PIXEL_CONVERSION_RATE) & (length_of_lane_blank > 2 / PIXEL_CONVERSION_RATE):
-                            lane_storage.append(length_of_lane)
-                            check_sibal = 0
-                            length_of_lane = 0
-                            print('right_have_append')
-                        if length_of_lane > str_line / PIXEL_CONVERSION_RATE:
-                            right_turn = False
-                            lane_storage = []
-                            print('right_long_lane = ', length_of_lane * PIXEL_CONVERSION_RATE)
-                            break
-                    if len(lane_storage) >= 1:
-                        if max(lane_storage) >= str_line / PIXEL_CONVERSION_RATE:
-                            right_turn = False
-                            print('right_long_lane')
-                            print('R_max(lane_storage) = ', max(lane_storage) * PIXEL_CONVERSION_RATE)
-                        elif (max(lane_storage) < str_line / PIXEL_CONVERSION_RATE):
-                            right_turn = True
-                            print('right_short_lane')
-                            print('R_max(lane_storage) = ', max(lane_storage) * PIXEL_CONVERSION_RATE)
-
-                    print('a_R = ', a_R)
-                    print('b_R = ', b_R)
-
-                    if (roi_limit_L > (PT_view_height // 5) * 2) | (roi_limit_R > (PT_view_height // 5) * 2) | (line_type == 3):
-                        left_turn = False
-                        right_turn = False
-                        print('not_dotted_lane_by_roi_limit')
-
-                    # if left_lane_change >=1:left_turn = True
-                    # else: left_turn = False
-                    # if right_lane_change >=1:right_turn = True
-                    # else: right_turn = False
-
-                    # white_tresh_lower_left = white_tresh_lower_left * ((bynary_left_pixel_percent + 0.15) / (target_left_pixel_percent + 0.15))
-                    prev_error_pixel_percent_left = error_pixel_percent_left
-                    error_pixel_percent_left = bynary_left_pixel_percent - target_left_pixel_percent
-                    total_error_left = total_error_left + error_pixel_percent_left
-                    tresh_factor_left = kp * error_pixel_percent_left + ki * total_error_left + kd * (error_pixel_percent_left - prev_error_pixel_percent_left)
-                    white_tresh_lower_left = white_tresh_lower_left * pow(2, tresh_factor_left)
-                    if white_tresh_lower_left >= 205: white_tresh_lower_left = 205
-                    if white_tresh_lower_left <= 157: white_tresh_lower_left = 157
-
-                    # white_tresh_lower_right = white_tresh_lower_right * ((bynary_right_pixel_percent + 0.15) / (target_right_pixel_percent + 0.15))
-                    prev_error_pixel_percent_right = error_pixel_percent_right
-                    error_pixel_percent_right = bynary_right_pixel_percent - target_right_pixel_percent
-                    total_error_right = total_error_right + error_pixel_percent_right
-                    tresh_factor_right = kp * error_pixel_percent_right + ki * total_error_right + kd * (error_pixel_percent_right - prev_error_pixel_percent_right)
-                    white_tresh_lower_right = white_tresh_lower_right * pow(2, tresh_factor_right)
-                    if white_tresh_lower_right >= 205: white_tresh_lower_right = 205
-                    if white_tresh_lower_right <= 157: white_tresh_lower_right = 157
-
-                    white_tresh_lower_half_sum = (white_tresh_lower_left + white_tresh_lower_right) / 2
-
-                    print('error_pixel_percent_left =', error_pixel_percent_left, 'tresh_factor_left = ', tresh_factor_left, 'pow(2, tresh_factor_left) = ', pow(2, tresh_factor_left))
-                    print('error_pixel_percent_right =', error_pixel_percent_right, 'tresh_factor_right = ', tresh_factor_right, 'pow(2, tresh_factor_right) = ', pow(2, tresh_factor_right))
-                    add_debug_image2_b = True
-
-                    yellow_bynary_in_left_lane_area = cv2.bitwise_and(yellow_mask_area_detect_morph, debug_images2[1])
-                    yellow_bynary_in_right_lane_area = cv2.bitwise_and(yellow_mask_area_detect_morph, debug_images2[2])
-                    bynary_yellow_pixel_percent = np.sum(yellow_mask_area_detect_morph) / view_area
-                    yellow_bynary_in_left_lane_area_pixel_percent = np.sum(yellow_bynary_in_left_lane_area) / view_area
-                    yellow_bynary_in_right_lane_area_pixel_percent = np.sum(yellow_bynary_in_right_lane_area) / view_area
-
-                    # cv2.imshow('yellow_bynary_in_right_lane_area',cv2.cvtColor(yellow_bynary_in_right_lane_area*255,cv2.COLOR_GRAY2BGR))
-                    target_yellow_pixel_percent = 0.02
-
-                    prev_error_pixel_percent_yellow = error_pixel_percent_yellow
-                    error_pixel_percent_yellow = bynary_yellow_pixel_percent - target_yellow_pixel_percent
-                    total_error_yellow = total_error_left + error_pixel_percent_yellow
-                    tresh_factor_yellow = kp * error_pixel_percent_yellow + ki * total_error_yellow + kd * (error_pixel_percent_yellow - prev_error_pixel_percent_yellow)
-                    yellow_s_tresh_lower = yellow_s_tresh_lower * pow(2, tresh_factor_yellow)
-                    if yellow_s_tresh_lower >= 85: yellow_s_tresh_lower = 85
-                    if yellow_s_tresh_lower <= 45: yellow_s_tresh_lower = 45
-
-                    if (yellow_bynary_in_left_lane_area_pixel_percent >= target_left_pixel_percent / 4):
-                        left_yellow_lane = True
-                    else:
-                        left_yellow_lane = False
-                    if (yellow_bynary_in_right_lane_area_pixel_percent >= target_right_pixel_percent / 4):
-                        right_yellow_lane = True
-                    else:
-                        right_yellow_lane = False
-
-                    print('yellow_bynary_in_left_lane_area_pixel_percent = ', yellow_bynary_in_left_lane_area_pixel_percent, 'yellow_bynary_in_right_lane_area_pixel_percent = ', yellow_bynary_in_right_lane_area_pixel_percent)
-
-                    roi_limit_L_2 = roi_limit_L
-                    if roi_limit_L_2 >= viewsize[1] / 5 * 4 - (viewsize[1] // 5) * 3 - 1: roi_limit_L_2 = int(viewsize[1] / 5 * 4 - (viewsize[1] // 5) * 3 - 1)
-                    roi_limit_R_2 = roi_limit_R
-                    if roi_limit_R_2 >= viewsize[1] / 5 * 4 - (viewsize[1] // 5) * 3 - 1: roi_limit_R_2 = int(viewsize[1] / 5 * 4 - (viewsize[1] // 5) * 3 - 1)
-
-                    # bynary_left_upside_pixel_percent = np.sum(bynary_all_window_image_left_area_2[roi_limit_L_2 : int((viewsize[1] // 5) * 3 - 1 + roi_limit_L_2), :]) / view_area
-                    # bynary_right_upside_pixel_percent = np.sum(bynary_all_window_image_right_area_2[roi_limit_R_2 : int((viewsize[1] // 5) * 3 - 1 + roi_limit_R_2), :]) / view_area
-                    # cv2.imshow('1',bynary_window_image_right_area*255)
-                    # cv2.imshow('2',bynary_window_image_right_area[roi_limit_L_2 : int((viewsize[1] // 5) * 3 - 1 + roi_limit_L_2), :]*255)
-                    # if bynary_left_upside_pixel_percent < full_line_target_percent / 6.5 and bynary_right_upside_pixel_percent > target_right_pixel_percent / 2:
-                    #     following_right_lane = True
-                    #     following_left_lane = False
-                    #     print('following_right_lane = ', following_right_lane, '****', '  bynary_left_upside_pixel_percent = ', bynary_left_upside_pixel_percent)
-                    # elif bynary_right_upside_pixel_percent < full_line_target_percent / 6.5 and bynary_left_upside_pixel_percent > target_left_pixel_percent / 2:
-                    #     following_right_lane = False
-                    #     following_left_lane = True
-                    #     print('following_left_lane = ', following_left_lane, '****', '  bynary_right_upside_pixel_percent= ', bynary_right_upside_pixel_percent)
-                    # else:
-                    #     following_right_lane = False
-                    #     following_left_lane = False
-                    #     print('not_line_following  :: bynary_left_upside_pixel_percent , bynary_right_upside_pixel_percent = ', bynary_left_upside_pixel_percent, ' , ',bynary_right_upside_pixel_percent)
-
-                    # bynary_all_window_image_left_area_2[:, int(viewsize[0] // 2 - road_width / PIXEL_CONVERSION_RATE / 4 - 1):int(viewsize[0] // 2 + road_width / PIXEL_CONVERSION_RATE / 4 - 1)] = 0
-                    # bynary_all_window_image_left_area_2[:, :int(viewsize[0] // 2 - (road_width / 2 + 1) / PIXEL_CONVERSION_RATE - 1)] = 0
-                    # bynary_all_window_image_left_area_2[:, int(viewsize[0] // 2 + (road_width / 2 + 1) / PIXEL_CONVERSION_RATE - 1):] = 0
-
-                    bynary_left_upside_pixel_percent = np.sum(bynary_all_window_image_left_area_2) / view_area
-                    bynary_right_upside_pixel_percent = np.sum(bynary_all_window_image_right_area_2) / view_area
-                    if (bynary_left_upside_pixel_percent <= target_left_pixel_percent / 5 * 2) & (bynary_right_pixel_percent > target_right_pixel_percent / 3 * 2):
-                        following_right_lane = True
-                        following_left_lane = False
-                        print('not follow window 1')
-                    elif (bynary_right_upside_pixel_percent <= target_right_pixel_percent / 5 * 2) & (bynary_left_pixel_percent > target_left_pixel_percent / 3 * 2):
-                        following_right_lane = False
-                        following_left_lane = True
-                        print('not follow window 2')
-                    else:
-                        following_right_lane = False
-                        following_left_lane = False
-                        print('not follow window 3 bynary_left_pixel_percent, bynary_right_pixel_percent = ', bynary_left_pixel_percent, ' , ', bynary_right_pixel_percent)
-
-# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ1차 로스 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-
-            if error == 0:
-                flaots_for_mission.left_curv = lc
-                flaots_for_mission.right_curv = rc
-                flaots_for_mission.deviation = deviation
-                flaots_for_mission.stop_deviation = stop_deviation
-                flaots_for_mission.mid_point_vector = np.add(left_fit, right_fit) / 2
-                flaots_for_mission.error = error
-                flaots_for_mission.left_trun = left_turn
-                flaots_for_mission.right_trun = right_turn
-
-                for i in range(23):
-                    point_pixter = viewsize[1] / 23
-                    flaots.testset.data[i] = point_pixter * PIXEL_CONVERSION_RATE * i
-                    m = flaots_for_mission.mid_point_vector[0] * (viewsize[1] - point_pixter * i) ** 2 + flaots_for_mission.mid_point_vector[1] * (viewsize[1] - point_pixter * i) + flaots_for_mission.mid_point_vector[2] - viewsize[0] / 2
-                    flaots.testset.data[23 + i] = m * PIXEL_CONVERSION_RATE
-                self.prediction_pub.publish(flaots)
-                self.lane_identify_pub.publish(flaots_for_mission)
-
-
-                # debug_images3[0] : 투상변환에서 차선 사이 영역 확인, debug_images3[1] : [0] 역투상 , debug_images3[2] : [1]를 원본 영상 위에 겹쳐서 보여줌 = final_image
-
-# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ2차 로스 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-
-
-
-            if error == 0:
-                undistored_image = np.copy(video_copy2)
-                color_stop_warp, newwarp, final_image, debug_images3 = plot_lanes_unwrap(viewsize, left_fit, right_fit, left_turn, right_turn, left_yellow_lane, right_yellow_lane, undistored_image, M_INV, stopx_base, roi_limit_M, roi_limit_L, roi_limit_R, originalsize, is_plot=False, add_debug_image=add_debug_image3)
-                # binary_detect_stop_morph_brg_3 = np.uint8(np.dstack((binary_detect_stop_morph_brg, binary_detect_stop_morph_brg, binary_detect_stop_morph_brg))*255)
-                base_stop_image_show = cv2.bitwise_and(color_stop_warp, binary_detect_stop_morph_brg)
-
-                base_stop_image_yellow = cv2.bitwise_and(color_stop_warp, yellow_mask_area_detect_morph)
-
-                # base_stop_image = cv2.cvtColor(base_stop_image_show, cv2.COLOR_BGR2GRAY)
-                length_stop_histogram, line_type, stopx_base, max_stop_histogram, bump_basex, bump_height = plot_stop_peak_hist(base_stop_image_show, base_stop_image_yellow, road_width, PIXEL_CONVERSION_RATE, is_plot=False)
-
-                if stopx_base > 20: stopx_base = stopx_base - 20
-
-                stop_deviation = (viewsize[1] - stopx_base) * PIXEL_CONVERSION_RATE
-                base_stop_image_show = cv2.cvtColor(base_stop_image_show, cv2.COLOR_GRAY2BGR)
-                # cv2.imshow('base_stop_image_show', base_stop_image_show * 255)
-
-            if add_debug_image3:
-                if error == 0:
-                    composed_image = np.copy(final_image)
-                else:
-                    composed_image = np.copy(video_copy2)
-                # debug_images_all2 = list(itertools.chain.from_iterable(debug_images_all))
-                # composed_image = compose_debug_images(debug_images_all2)
-                left_pix_per_text = "lef_pix_per : " + "{:0.4f}".format(bynary_left_pixel_percent) + " in per"
-                right_pix_per_text = "Right_pix_per : " + "{:0.4f}".format(bynary_right_pixel_percent) + " in per"
-                L_target_pixel_percent = "L_target_pix_per : " + "{:0.4f}".format(target_left_pixel_percent) + " in per"
-                R_target_pixel_percent = "R_target_pix_per : " + "{:0.4f}".format(target_right_pixel_percent) + " in per"
-                deviation_text = "Deviation : " + "{:0.2f}".format(deviation) + " in m"
-                error_text = "Error_type : " + "{:}".format(error) + " in type"
-                # print(type(deviation),type(white_tresh_left))
-                white_tresh_lower_left_text = "tresh_left : " + "{:0.2f}".format(white_tresh_lower_left) + " "
-                white_tresh_lower_right_text = "tresh_right : " + "{:0.2f}".format(white_tresh_lower_right) + " "
-                following_lane_text = "fallowing : " + " fair"
-                flaots_for_mission.fair_state = 1
-                if following_left_lane:
-                    following_lane_text = "fallowing : " + " left"
-                    flaots_for_mission.fair_state = 0
-
-                if following_right_lane:
-                    following_lane_text = "fallowing : " + " right"
-                    flaots_for_mission.fair_state = 2
-
-                loop_text = "loop : " + "{:}".format(loop) + " "
-                half_sum_pixel_per_text = "half_sum_pix_per : " + "{:0.4f}".format(bynary_half_sum_pixel_percent) + " in per"
-                target_half_sum_pixel_percent_text = "half_sum_target : " + "{:0.4f}".format(target_half_sum_pixel_percent) + " in per"
-                top_offset_text = "top_offset : " + "{:0.1f}".format(top_offset) + " in m"
-                mid_offset_text = "mid_offset : " + "{:0.1f}".format(mid_offset) + " in m"
-                bot_offset_text = "bot_offset : " + "{:0.1f}".format(bot_offset) + " in m"
-                tresh_factor_right_text = "tresh_factor_right : " + "{:0.3f}".format(tresh_factor_right) + " "
-                left_fit_deg_ave_text = "L_fit_deg_ave : " + "{:0.3f}".format(abs(left_fit_deg_ave)) + "in deg"
-                center_fit_deg_ave_text = "M_fit_deg_ave : " + "{:0.3f}".format(abs(center_fit_deg_ave)) + "in deg"
-                right_fit_deg_ave_text = "R_fit_deg_ave : " + "{:0.3f}".format(abs(right_fit_deg_ave)) + "in deg"
-                deviation_stop_text = "Stop_Deviation : " + "{:0.2f}".format(stop_deviation) + " in m"
-                length_stop_histogram_text = "length_stop_histogram : " + "{:0.2f}".format(length_stop_histogram)
-                line_type_text = "line_type : " + "{:}".format(line_type)
-                if line_type == 0: line_type_text = "line_type : " + "{:0.2f} / clean_line".format(line_type)
-                if line_type == 1: line_type_text = "line_type : " + "{:0.2f} / not_stop_line".format(line_type)
-                if line_type == 2: line_type_text = "line_type : " + "{:0.2f} / stop_line".format(line_type)
-                if line_type == 3: line_type_text = "line_type : " + "{:0.2f} / yellow_line".format(line_type)
-                max_stop_histogram_text = "max_s_hist : " + "{:0.2f}".format(max_stop_histogram)
-                center_fit_mid_normal_grad_text =  "m_normal_grad : " + "{:0.2f}".format(center_fit_mid_normal_grad)
-                yellow_s_tresh_lower_text = "yellow_tresh : " + "{:}".format(yellow_s_tresh_lower)
-
-
-                fontScale = 1
-                thickness = 2
-                fontFace = cv2.FONT_ITALIC
-
-                cv2.putText(composed_image, left_pix_per_text, (10, 50), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, right_pix_per_text, (10, 90), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, L_target_pixel_percent, (10, 130), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, R_target_pixel_percent, (10, 170), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                if error == 0:
-                    cv2.putText(composed_image, error_text, (10, 210), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                else:
-                    cv2.putText(composed_image, error_text, (10, 210), fontFace, fontScale, (0, 0, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, deviation_text, (10, 250), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, loop_text, (10, 290), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, deviation_stop_text, (10, 330), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, length_stop_histogram_text, (10, 370), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, line_type_text, (10, 410), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, max_stop_histogram_text, (10, 450), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-
-
-                cv2.putText(composed_image, half_sum_pixel_per_text, (580, 50), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, target_half_sum_pixel_percent_text, (580, 90), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, white_tresh_lower_left_text, (580, 130), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, white_tresh_lower_right_text, (580, 170), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, following_lane_text, (580, 210), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, top_offset_text, (580, 250), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, mid_offset_text, (580, 290), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, bot_offset_text, (580, 330), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, tresh_factor_right_text, (580, 370), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, left_fit_deg_ave_text, (580, 410), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, center_fit_deg_ave_text, (580, 450), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, right_fit_deg_ave_text, (580, 490), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-                cv2.putText(composed_image, yellow_s_tresh_lower_text, (580, 530), fontFace, fontScale, (100, 200, 255), thickness, lineType=cv2.LINE_AA)
-
-
-            # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ차선 좌표 검출ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-
-            # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡcv2.imshow 이미지 쇼 컨트롤센터 ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-            imshow_scale_1 = 0.3
-            imshow_scale_2 = 0.6
-
-            # cv2.imshow('video_copy1_PTtrans_blur_normalize4hsv', video_copy1_PTtrans_blur_normalize4hsv)  # 투상변환 영상
-            # video_copy1_PTtrans_resized = cv2.resize(video_copy1_PTtrans, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-            # cv2.imshow('video_copy1_PTtrans_resized', video_copy1_PTtrans_resized)
-
-            # gray_image = cv2.cvtColor(video_copy1_PTtrans_blur_normalize4hsv, cv2.COLOR_BGR2GRAY)
-            # gray_image_resized = cv2.resize(gray_image, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-            # cv2.imshow('gray_image_resized',gray_image_resized)
-
-            # cv2.imshow('left', binary_detect_morph_brg_left) #왼쪽 차선 기준 임계값 이진화
-            # binary_detect_morph_brg_left_resized = cv2.resize(binary_detect_morph_brg_left, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-            # cv2.imshow('left', binary_detect_morph_brg_left_resized)
-
-            # cv2.imshow('right', binary_detect_morph_brg_right) #오른쪽 차선 기준 임계값 이진화
-            # binary_detect_morph_brg_right_resized = cv2.resize(binary_detect_morph_brg_right, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-            # cv2.imshow('right', binary_detect_morph_brg_right_resized)
-
-            # cv2.imshow('binary_detect_morph_brg_half_sum', binary_detect_morph_brg_half_sum) # 각각 기준 임계값 이진화 영상을 반반 합친 영상
-            binary_detect_morph_brg_half_sum_resized = cv2.resize(binary_detect_morph_brg_half_sum*255, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-            cv2.imshow('half_sum_resized', binary_detect_morph_brg_half_sum_resized)  # 필
-
-            # cv2.imshow('final_line_color', final_line_color) #투상변환 + 블러, 정규화 + 최종 추출 영상 컬러 버전
-            final_line_color_resized = cv2.resize(final_line_color, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-            cv2.imshow('color_resized', final_line_color_resized)  # 필
-
-            # cv2.imshow('final_line_bynary_full', final_line_bynary_full) #두 차선을 구분하지 않고 임계값을 계산한 영상 (사용하지않음)
-            # cv2.imshow('final_line_bynary_half_sum', final_line_bynary_half_sum)  # 투상변환 + 블러, 정규화 + 최종 추출 영상 이진화 버전 # 최종적으로 추세선 감지 함수에 사용되는 영상 # binary_detect_morph_brg_half_sum 이것과 컬러 영역 이진화 영상을 합친 것
-            # final_line_bynary_half_sum_resized = cv2.resize(final_line_bynary_half_sum, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1)))) # 최종적으로 추세선 감지 함수에 사용되는 영상
-            # cv2.imshow('final_line_bynary_half_sum_resized', final_line_bynary_half_sum_resized)
-
-            # video_copy1_PTtrans_resized = cv2.resize(video_copy1_PTtrans, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-            # cv2.imshow('video_copy1_PTtrans_resized', video_copy1_PTtrans_resized)
-
-            video_copy1_PTtrans_copy1_to_draw_expected_lane = np.copy(video_copy1_PTtrans)
-            cv2.line(video_copy1_PTtrans_copy1_to_draw_expected_lane, (int(straght_lane_left[0][0]), int(straght_lane_left[0][1])), (int(straght_lane_left[1][0]), int(straght_lane_left[1][1])), [0, 255, 0], 2)
-            cv2.line(video_copy1_PTtrans_copy1_to_draw_expected_lane, (int(straght_lane_right[0][0]), int(straght_lane_right[0][1])), (int(straght_lane_right[1][0]), int(straght_lane_right[1][1])), [0, 255, 0], 2)
-            cv2.line(video_copy1_PTtrans_copy1_to_draw_expected_lane, (int(vertical_lane[0][0]), int(vertical_lane[0][1])), (int(vertical_lane[1][0]), int(vertical_lane[1][1])), [0, 255, 0], 2)
-            # cv2.imshow('video_copy1_PTtrans_copy1_to_draw_expted_lane', video_copy1_PTtrans_copy1_to_draw_expected_lane)
-            video_copy1_PTtrans_copy1_to_draw_expected_lane_resized = cv2.resize(video_copy1_PTtrans_copy1_to_draw_expected_lane, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-            cv2.imshow('expected_lane', video_copy1_PTtrans_copy1_to_draw_expected_lane_resized)  # 필
-            draw_expected_line_reverse, draw_expected_line_reverse_window_mix = Show_Original_Window_Mix(video_copy1_PTtrans_copy1_to_draw_expected_lane, video_copy1, src_pts_yfix, dst_pts, originalsize)
-            draw_expected_line_reverse_window_mix_resized = cv2.resize(draw_expected_line_reverse_window_mix, dsize=(int(round(originalsize[0] * imshow_scale_2)), int(round(originalsize[1] * imshow_scale_2))))
-            cv2.imshow('reverse_expected_lane', draw_expected_line_reverse_window_mix_resized)  # 필
-
-            # video_copy1_PTtrans_copy1_to_draw_expted_lane_resized = cv2.resize(video_copy1_PTtrans_copy1_to_draw_expted_lane, dsize=(round(video_copy1_PTtrans_copy1_to_draw_expted_lane.shape[1] * imshow_scale_1 ), round(video_copy1_PTtrans_copy1_to_draw_expted_lane.shape[0] * imshow_scale_1 )))
-            # cv2.imshow('video_copy1_PTtrans_copy1_to_draw_expted_lane_resized', video_copy1_PTtrans_copy1_to_draw_expted_lane_resized)
-
-            # if error != 0:
-            if add_debug_image1_a == 1:
-                sliding_window = np.copy(debug_images1[0])  # 슬라이딩 윈도우  # = debug_images[0]  # 여기서 debug_images 는 이진화영역과 좌표 추출 windows 영역과 그 안에서 검출된 픽셀들 그리고 추세선을 시각화 한 것이다.
-                sliding_window_resized = cv2.resize(sliding_window, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-                cv2.imshow('sliding_window_resized', sliding_window_resized) # 바이너리 및 차선 영역
-
-            if add_debug_image2_a == 1:
-                bynary_and_red_blue_and_poly_area = np.copy(debug_images2[0])  # = debug_images[1] 추세선 # 0718-[0](bynary_and_red_blue)를 없애서 [0]이 추세선이됨 # 여기서 debug_images[0]은 이진화 영역과 좌표 추출 영역 안에 포함된 픽셀들을 파랑,빨강,흰색으로 보여주는 이미지이구 [1] 추세선을 시각화 한 것이다
-                # cv2.imshow('bynary_and_red_blue_and_poly_area', bynary_and_red_blue_and_poly_area) # 바이너리 영역에서 추세선과 그 영역 표시 이미지
-                bynary_and_red_blue_and_poly_area_resized = cv2.resize(bynary_and_red_blue_and_poly_area, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-                cv2.imshow('poly_area', bynary_and_red_blue_and_poly_area_resized)  # 필
-                # video_window_PTtrans_reverse, video_original_window_mix = Show_Original_Window_Mix(bynary_and_red_blue_and_poly_area, video_copy1, src_pts_yfix, dst_pts, originalsize)
-
-                red_blue = np.copy(debug_images2[5])
-                red_blue_reized =  cv2.resize(red_blue, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-                cv2.imshow('red_blue_reized', red_blue_reized)
-
-                binary_all_left_gray_resized = cv2.resize(binary_all_left_gray, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-                binary_all_right_gray_resized = cv2.resize(binary_all_right_gray, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-                cv2.imshow('binary_all_left_gray_resized',binary_all_left_gray_resized * 255)
-                cv2.imshow('binary_all_right_gray_resized',binary_all_right_gray_resized * 255)
-
-            # video_window_PTtrans_reverse, video_original_window_mix = Show_Original_Window_Mix(bynary_and_red_blue_and_poly_area, video_copy1, src_pts_yfix, dst_pts, originalsize)
-            # cv2.imshow('video_window_PTtrans_reverse', video_window_PTtrans_reverse)  # 차선 좌표 추세선 함수와 검출창이 포함된 이미지를 역투상변환 한 이미지
-            # cv2.imshow('video_original_window_mix', video_original_window_mix)  # 차선 좌표 추세선 함수와 검출창이 포함된 이미지를 역투상변환 한 이미지와 원본 영상 모두 보이는 이미지
-            # if add_debug_image2_b == True:
-            # cv2.imshow('bynary_window_image_area', bynary_window_image_area)
-            # bynary_window_image_area_resized = cv2.resize(bynary_window_image_area, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-            # cv2.imshow('bynary_window_image_area_resized', bynary_window_image_area_resized)
-
-            # bynary_window_image_left_area_resized = cv2.resize(bynary_window_image_left_area, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-            # bynary_window_image_right_area_resized = cv2.resize(bynary_window_image_right_area, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-            # cv2.imshow('bynary_window_image_left_area_resized', bynary_window_image_left_area_resized)  # 차선 검출 영역 안의 픽셀들만 보여주는 이미지
-            # cv2.imshow('bynary_window_image_right_area_resized', bynary_window_image_right_area_resized)
-
-            if add_debug_image3:
-                # cv2.imshow('composed_image', composed_image)  # 필 # 차선을 초록색으로 덮은 이미지에 곡률과 편차를 화면에 택스트를 표시한 이미지
-                composed_image_resized = cv2.resize(composed_image, dsize=(int(round(originalsize[0] * imshow_scale_2)), int(round(originalsize[1] * imshow_scale_2))))
-                cv2.imshow('composed_image_resized', composed_image_resized)  # 필
-
-                # out.write(video_copy1_PTtrans)
-
-                # if error == 0:
-                # cv2.imshow('final_image',final_image) # 차선 영역을 초록색으로 색칠한 이미지
-                # warped_new = np.copy(debug_images3[0])  # 투상변환 화면에서의 초록색으로 덮은 이미지와 점선 영역
-                # warped_new_resized = cv2.resize(warped_new, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
-                # cv2.imshow('warped_new', warped_new)
-                # cv2.imshow('warped_new_resized', warped_new_resized)
-
-
-            # stop = timeit.default_timer()
-            # print('time = ', stop - start)  # 걸림
-
-
-    # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡcv2.imshow 이미지 쇼 컨트롤센터 ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-
-
-
-# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ2차 로스 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-            self.image_pub.publish(self.bridge.cv2_to_imgmsg(composed_image, encoding="bgr8"))
 
 
 def main():  # 메인문
@@ -2057,84 +2241,6 @@ def main():  # 메인문
         # out.release()
         cv2.destroyAllWindows()
 
-
-# -----------------------ros 추가용 코드------------------------------
-
-selected_pts = []  # tf function location array
-
-view_scale = 0.4
-sight_height = 1.62  # 카메라 높이
-target_distance = 16.58  # 11.25  # 목표 거리 (현재 목표 10m전방)
-road_width = 4  # 차선 폭 (현재 3.5미터 실측 후 조정)
-margin = 12  # 추가로 투상변환할 폭
-
-# view_scale = 1
-# sight_height = 1.06  # 카메라 높이
-# target_distance = 19.35  # 11.25  # 목표 거리 (현재 목표 10m전방)
-# road_width = 3.5  # 차선 폭 (현재 3.5미터 실측 후 조정)
-# margin = 12  # 추가로 투상변환할 폭
-
-
-
-# focal_length_horizontal = 0.35  # sample_video(f_l_h = 0.4, f_l_v = 0.35)  C525(f_l_h = 0.515, f_l_v = 0.31(by0.1)) C930e(f_l_h = 0.35, f_l_v = 0.648)
-# focal_length_vertical = 0.648
-# view_length1_h = 0.3
-# view_length1_h_bot = 0.3
-# view_length2_v = 0.3
-
-focal_length_horizontal = 1.635  # sample_video(f_l_h = 0.4, f_l_v = 0.35)  C525(f_l_h = 0.515, f_l_v = 0.31(by0.1)) C930e(f_l_h = 0.35, f_l_v = 0.648)
-focal_length_vertical = 1.635
-view_length1_h = 1.42
-view_length1_h_bot = 1.485
-view_length2_v = 0.78
-
-PIXEL_CONVERSION_RATE = 0.01 / view_scale  # 100픽셀당 1미터
-ym_per_pix = 0.01 / view_scale  # meters per pixel in y dimension
-xm_per_pix = 0.01 / view_scale  # meters per pixel in x dimension
-lower_offset = road_width - 1.0  # 최소 차선 감지 폭
-upper_offset = road_width + 1.5  # 최대 차선 감지 폭
-kp = 2
-ki = 0.0
-kd = 0.7
-
-proper_size = np.zeros([720, 1280, 3], dtype=np.uint8)
-#proper_size = np.zeros([480, 640, 3], dtype=np.uint8)
-# proper_size = np.copy(video)
-# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ좌표 자동 지정ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-src_pts_yfix, dst_pts, PT_view_width, PT_view_height, PT_view_width_2, PT_view_height_2, vertical_lane, straght_lane_left, straght_lane_right = find_proper_transper_point(proper_size, sight_height, target_distance, road_width, margin, view_scale, focal_length_horizontal, focal_length_vertical, view_length1_h, view_length1_h_bot, view_length2_v,
-                                                                                                                                        PIXEL_CONVERSION_RATE)
-M_INV = cv2.getPerspectiveTransform(dst_pts, src_pts_yfix)
-viewsize = [PT_view_width, PT_view_height]
-# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ좌표 자동 지정ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-
-
-lc = 0.0
-rc = 0.0
-deviation = 0.0
-left_fit = []
-right_fit = []
-white_tresh_lower_left = 160
-white_tresh_lower_right = 160
-white_tresh_lower_half_sum = 160
-yellow_s_tresh_lower = 50
-error = 0
-bynary_pixel_percent = 0.02
-error_pixel_percent_left = 0
-total_error_left = 0
-error_pixel_percent_right = 0
-total_error_right = 0
-error_pixel_percent_half_sum = 0
-total_error_half_sum = 0
-left_turn = 0
-right_turn = 0
-left_yellow_lane = 0
-right_yellow_lane = 0
-following_right_lane = False
-following_left_lane = False
-
-
-
-# -----------------------ros 추가용 코드------------------------------
 
 
 if __name__ == '__main__':

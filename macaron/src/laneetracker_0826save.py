@@ -343,7 +343,7 @@ def find_ploy_fit_window_search(binary_warped, leftx_base, rightx_base, followin
 
         if len(leftx) < 3:
             error = 2
-            print('error = 2, find_ploy_fit_window_search, cant_find_line - leftx : ', len(leftx))
+            print('error = 2, find_ploy_fit_window_search, cant_find_line - leftx : ', len(leftx)) #, ', rightx : ', len(rightx))
             return [], [], [], error, 0, 0
 
         left_fit, right_fit = fit_ploy_2_degree(leftx, lefty, leftx, lefty)
@@ -405,6 +405,7 @@ def find_ploy_fit_window_search(binary_warped, leftx_base, rightx_base, followin
         # # # Extract left and right line pixel positions
         rightx = nonzerox[right_lane_inds]
         righty = nonzeroy[right_lane_inds]
+        leftx = nonzerox[right_lane_inds]
 
         # print(out_img.shape , '-', out_img.dtype , '-', np.max(out_img), '-', np.min(out_img))
         # out_img[lefty, leftx] = [0, 0, 255]
@@ -612,31 +613,31 @@ def next_frame_find_poly_already_fitted(binary_warped_left, binary_warped_right,
     rightx = nonzerox_right[right_lane_inds]
     righty = nonzeroy_right[right_lane_inds]
 
-    # spectrum_left = 0
-    # spectrum_right = 0
-    # spectrum_left_block = 0
-    # spectrum_right_block = 0
-    # if error_loop == 0:
-    #     for i in range(len(lefty) - 1):
-    #         spectrum_left = spectrum_left + (lefty[i] != lefty[i + 1])
-    #         if lefty[i + 1] - lefty[i] > 3 / PIXEL_CONVERSION_RATE:
-    #             spectrum_left_block = spectrum_left_block + 1
-    #     for i in range(len(righty) - 1):
-    #         spectrum_right = spectrum_right + (righty[i] != righty[i + 1])
-    #         if righty[i + 1] - righty[i] > 3 / PIXEL_CONVERSION_RATE:
-    #             spectrum_right_block = spectrum_right_block + 1
-    #     if spectrum_left / binary_warped_left.shape[0] < 0.2:
-    #         left_dotted = True
-    #     else:
-    #         left_dotted = False
-    #     if spectrum_right / binary_warped_left.shape[0] < 0.2:
-    #         right_dotted = True
-    #     else:
-    #         right_dotted = False
-    #     print('left_dotted = ', left_dotted, 'right_dotted = ', right_dotted)
-    #     print('spectrum_left_block = ', spectrum_left_block, 'spectrum_right_block = ', spectrum_right_block)
-    #     print('spectrum_left = ', spectrum_left, 'spectrum_right = ', spectrum_right)
-    #     print('spectrum_right/binary_warped_left.shape[0] = ', spectrum_right / binary_warped_left.shape[0])
+    spectrum_left = 0
+    spectrum_right = 0
+    spectrum_left_block = 0
+    spectrum_right_block = 0
+    if error_loop == 0:
+        for i in range(len(lefty) - 1):
+            spectrum_left = spectrum_left + (lefty[i] != lefty[i + 1])
+            if lefty[i + 1] - lefty[i] > 3 / PIXEL_CONVERSION_RATE:
+                spectrum_left_block = spectrum_left_block + 1
+        for i in range(len(righty) - 1):
+            spectrum_right = spectrum_right + (righty[i] != righty[i + 1])
+            if righty[i + 1] - righty[i] > 3 / PIXEL_CONVERSION_RATE:
+                spectrum_right_block = spectrum_right_block + 1
+        if spectrum_left / binary_warped_left.shape[0] < 0.2:
+            left_dotted = True
+        else:
+            left_dotted = False
+        if spectrum_right / binary_warped_left.shape[0] < 0.2:
+            right_dotted = True
+        else:
+            right_dotted = False
+        print('left_dotted = ', left_dotted, 'right_dotted = ', right_dotted)
+        print('spectrum_left_block = ', spectrum_left_block, 'spectrum_right_block = ', spectrum_right_block)
+        print('spectrum_left = ', spectrum_left, 'spectrum_right = ', spectrum_right)
+        print('spectrum_right/binary_warped_left.shape[0] = ', spectrum_right / binary_warped_left.shape[0])
 
     # Fit a second order polynomial to each
     if len(leftx) < 3 and len(rightx) < 3:
@@ -651,7 +652,7 @@ def next_frame_find_poly_already_fitted(binary_warped_left, binary_warped_right,
 
     if following_left_lane:
         if len(leftx) < 3:
-            print('error = 2, next_frame_find_poly_already_fitted, following_left_lane, cant_find_line :: leftx : ', len(leftx))
+            print('error = 2, next_frame_find_poly_already_fitted, following_left_lane, cant_find_line :: leftx : ', len(leftx), ', rightx : ', len(rightx))
             error = 2
             return [], [], 0, 0, 0, [], error, False, False, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         left_fit, right_fit = fit_ploy_2_degree(leftx, lefty, leftx, lefty)
@@ -680,7 +681,7 @@ def next_frame_find_poly_already_fitted(binary_warped_left, binary_warped_right,
 
     elif following_right_lane:
         if len(rightx) < 3:
-            print('error = 2, next_frame_find_poly_already_fitted, following_right_lane, cant_find_line ::  rightx : ', len(rightx))
+            print('error = 2, next_frame_find_poly_already_fitted, following_right_lane, cant_find_line :: leftx : ', len(leftx), ', rightx : ', len(rightx))
             error = 2
             return [], [], 0, 0, 0, [], error, False, False, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         left_fit, right_fit = fit_ploy_2_degree(rightx, righty, rightx, righty)
@@ -723,9 +724,9 @@ def next_frame_find_poly_already_fitted(binary_warped_left, binary_warped_right,
     center_fitx_bot = center_fit[0] * center_bot_y ** 2 + center_fit[1] * center_bot_y + center_fit[2]
     center_fitx_mid = center_fit[0] * center_mid_y ** 2 + center_fit[1] * center_mid_y + center_fit[2]
     center_fitx_top = center_fit[0] * center_top_y ** 2 + center_fit[1] * center_top_y + center_fit[2]
-    # print('center_fitx_bot = ', center_fitx_bot)
-    # print('PT_view_height', PT_view_height)
-    # print('left_fit, right_fit, center_fit = ', left_fit, right_fit, center_fit)
+    print('center_fitx_bot = ', center_fitx_bot)
+    print('PT_view_height', PT_view_height)
+    print('left_fit, right_fit, center_fit = ', left_fit, right_fit, center_fit)
     center_fit_bot_normal_grad = -1 / (2 * center_fit[0] * center_bot_y + center_fit[1])
     center_fit_mid_normal_grad = -1 / (2 * center_fit[0] * center_mid_y + center_fit[1])
     center_fit_top_normal_grad = -1 / (2 * center_fit[0] * center_top_y + center_fit[1])
@@ -734,7 +735,7 @@ def next_frame_find_poly_already_fitted(binary_warped_left, binary_warped_right,
     center_fit_bot_normal_line = [center_fit_bot_normal_grad, center_fitx_bot - center_fit_bot_normal_grad * center_bot_y]
     center_fit_mid_normal_line = [center_fit_mid_normal_grad, center_fitx_mid - center_fit_mid_normal_grad * center_mid_y]
     center_fit_top_normal_line = [center_fit_top_normal_grad, center_fitx_top - center_fit_top_normal_grad * center_top_y]
-    # print('center_fit_bot_normal_line, center_fit_mid_normal_line, center_fit_top_normal_line = ', center_fit_bot_normal_line, center_fit_mid_normal_line, center_fit_top_normal_line)
+    print('center_fit_bot_normal_line, center_fit_mid_normal_line, center_fit_top_normal_line = ', center_fit_bot_normal_line, center_fit_mid_normal_line, center_fit_top_normal_line)
 
     if center_fit_bot_normal_grad < 0:
         normal_bot_left_contacty = (-1 * (left_fit[1] - center_fit_bot_normal_line[0]) + ((left_fit[1] - center_fit_bot_normal_line[0]) ** 2 - 4 * left_fit[0] * (left_fit[2] - center_fit_bot_normal_line[1])) ** 0.5) / (2 * left_fit[0])
@@ -778,22 +779,22 @@ def next_frame_find_poly_already_fitted(binary_warped_left, binary_warped_right,
         print('b')
         if center_fit_top_normal_grad == 0: print('center_fit_top_normal_grad = 0')
 
-    # print('(left_fit[1] - center_fit_bot_normal_line[0]) ** 2 - 4 * left_fit[0] * (left_fit[2] - center_fit_bot_normal_line[1]) = ', (left_fit[1] - center_fit_bot_normal_line[0]) ** 2 - 4 * left_fit[0] * (left_fit[2] - center_fit_bot_normal_line[1]))
-    # print('(left_fit[1] - center_fit_mid_normal_line[0]) ** 2 - 4 * left_fit[0] * (left_fit[2] - center_fit_mid_normal_line[1]) = ', (left_fit[1] - center_fit_mid_normal_line[0]) ** 2 - 4 * left_fit[0] * (left_fit[2] - center_fit_mid_normal_line[1]))
-    # print('(left_fit[1] - center_fit_top_normal_line[0]) ** 2 - 4 * left_fit[0] * (left_fit[2] - center_fit_top_normal_line[1]) = ', (left_fit[1] - center_fit_top_normal_line[0]) ** 2 - 4 * left_fit[0] * (left_fit[2] - center_fit_top_normal_line[1]))
-    # print('(right_fit[1] - center_fit_bot_normal_line[0]) ** 2 - 4 * right_fit[0] * (right_fit[2] - center_fit_bot_normal_line[1]) = ', (right_fit[1] - center_fit_bot_normal_line[0]) ** 2 - 4 * right_fit[0] * (right_fit[2] - center_fit_bot_normal_line[1]))
-    # print('(right_fit[1] - center_fit_mid_normal_line[0]) ** 2 - 4 * right_fit[0] * (right_fit[2] - center_fit_mid_normal_line[1]) = ', (right_fit[1] - center_fit_mid_normal_line[0]) ** 2 - 4 * right_fit[0] * (right_fit[2] - center_fit_mid_normal_line[1]))
-    # print('(right_fit[1] - center_fit_top_normal_line[0]) ** 2 - 4 * right_fit[0] * (right_fit[2] - center_fit_top_normal_line[1]) = ', (right_fit[1] - center_fit_top_normal_line[0]) ** 2 - 4 * right_fit[0] * (right_fit[2] - center_fit_top_normal_line[1]))
+    print('(left_fit[1] - center_fit_bot_normal_line[0]) ** 2 - 4 * left_fit[0] * (left_fit[2] - center_fit_bot_normal_line[1]) = ', (left_fit[1] - center_fit_bot_normal_line[0]) ** 2 - 4 * left_fit[0] * (left_fit[2] - center_fit_bot_normal_line[1]))
+    print('(left_fit[1] - center_fit_mid_normal_line[0]) ** 2 - 4 * left_fit[0] * (left_fit[2] - center_fit_mid_normal_line[1]) = ', (left_fit[1] - center_fit_mid_normal_line[0]) ** 2 - 4 * left_fit[0] * (left_fit[2] - center_fit_mid_normal_line[1]))
+    print('(left_fit[1] - center_fit_top_normal_line[0]) ** 2 - 4 * left_fit[0] * (left_fit[2] - center_fit_top_normal_line[1]) = ', (left_fit[1] - center_fit_top_normal_line[0]) ** 2 - 4 * left_fit[0] * (left_fit[2] - center_fit_top_normal_line[1]))
+    print('(right_fit[1] - center_fit_bot_normal_line[0]) ** 2 - 4 * right_fit[0] * (right_fit[2] - center_fit_bot_normal_line[1]) = ', (right_fit[1] - center_fit_bot_normal_line[0]) ** 2 - 4 * right_fit[0] * (right_fit[2] - center_fit_bot_normal_line[1]))
+    print('(right_fit[1] - center_fit_mid_normal_line[0]) ** 2 - 4 * right_fit[0] * (right_fit[2] - center_fit_mid_normal_line[1]) = ', (right_fit[1] - center_fit_mid_normal_line[0]) ** 2 - 4 * right_fit[0] * (right_fit[2] - center_fit_mid_normal_line[1]))
+    print('(right_fit[1] - center_fit_top_normal_line[0]) ** 2 - 4 * right_fit[0] * (right_fit[2] - center_fit_top_normal_line[1]) = ', (right_fit[1] - center_fit_top_normal_line[0]) ** 2 - 4 * right_fit[0] * (right_fit[2] - center_fit_top_normal_line[1]))
     bot_offset = ((normal_bot_left_contactx - normal_bot_right_contactx) ** 2 + (normal_bot_left_contacty - normal_bot_right_contacty) ** 2) ** 0.5 * PIXEL_CONVERSION_RATE
     mid_offset = ((normal_mid_left_contactx - normal_mid_right_contactx) ** 2 + (normal_mid_left_contacty - normal_mid_right_contacty) ** 2) ** 0.5 * PIXEL_CONVERSION_RATE
     top_offset = ((normal_top_left_contactx - normal_top_right_contactx) ** 2 + (normal_top_left_contacty - normal_top_right_contacty) ** 2) ** 0.5 * PIXEL_CONVERSION_RATE
     # print('normal_bot_left_contactx = ',normal_bot_left_contactx, 'normal_bot_left_contacty = ',normal_bot_left_contacty, 'normal_bot_right_contactx = ',normal_bot_right_contactx, 'normal_bot_right_contacty = ',normal_bot_right_contacty )
-    # print('normal_bot_left_contactx = ', normal_bot_left_contactx, 'normal_bot_left_contacty = ', normal_bot_left_contacty, 'normal_bot_right_contactx = ', normal_bot_right_contactx, 'normal_bot_right_contacty = ', normal_bot_right_contacty)
-    # print('normal_mid_left_contactx = ', normal_mid_left_contactx, 'normal_mid_left_contacty = ', normal_mid_left_contacty, 'normal_mid_right_contactx = ', normal_mid_right_contactx, 'normal_mid_right_contacty = ', normal_mid_right_contacty)
-    # print('normal_top_left_contactx = ', normal_top_left_contactx, 'normal_top_left_contacty = ', normal_top_left_contacty, 'normal_top_right_contactx = ', normal_top_right_contactx, 'normal_top_right_contacty = ', normal_top_right_contacty)
-    # print('bot_offset = ', bot_offset * PIXEL_CONVERSION_RATE, 'mid_offset = ', mid_offset * PIXEL_CONVERSION_RATE, 'top_offset = ', top_offset * PIXEL_CONVERSION_RATE)
+    print('normal_bot_left_contactx = ', normal_bot_left_contactx, 'normal_bot_left_contacty = ', normal_bot_left_contacty, 'normal_bot_right_contactx = ', normal_bot_right_contactx, 'normal_bot_right_contacty = ', normal_bot_right_contacty)
+    print('normal_mid_left_contactx = ', normal_mid_left_contactx, 'normal_mid_left_contacty = ', normal_mid_left_contacty, 'normal_mid_right_contactx = ', normal_mid_right_contactx, 'normal_mid_right_contacty = ', normal_mid_right_contacty)
+    print('normal_top_left_contactx = ', normal_top_left_contactx, 'normal_top_left_contacty = ', normal_top_left_contacty, 'normal_top_right_contactx = ', normal_top_right_contactx, 'normal_top_right_contacty = ', normal_top_right_contacty)
+    print('bot_offset = ', bot_offset * PIXEL_CONVERSION_RATE, 'mid_offset = ', mid_offset * PIXEL_CONVERSION_RATE, 'top_offset = ', top_offset * PIXEL_CONVERSION_RATE)
 
-    # print('bot_line = ', center_fit_bot_normal_grad, ' * y + ', center_fitx_bot - center_fit_bot_normal_grad * (PT_view_height))
+    print('bot_line = ', center_fit_bot_normal_grad, ' * y + ', center_fitx_bot - center_fit_bot_normal_grad * (PT_view_height))
 
     if (bot_offset <= lower_offset) | (bot_offset >= upper_offset) | (np.isnan(bot_offset)):  # 추세선이 차선범위를 이탈할 시 좌표검출 재가동
         print('error = 3, next_frame_find_poly_already_fitted, _bot_line_overlaped or line_breakaway ::bot_offset = ', bot_offset, 'normal_bot_left_contactx = ', normal_bot_left_contactx, 'normal_bot_right_contactx = ', normal_bot_right_contactx)
@@ -1023,7 +1024,7 @@ def plot_lanes_unwrap(viewsize, left_poly, right_poly, left_turn, right_turn, le
     # color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
     # color_stop_warp = np.dstack((warp_zero, warp_zero, warp_zero))
     color_stop_warp, _, _ = cv2.split(color_warp)
-    center_fit = np.add(left_poly, right_poly) / 2
+    center_fit = np.add(left_fit, right_fit) / 2
 
     plot_yyy = np.linspace(stopx_limit, viewsize[1] - 1, viewsize[1] - stopx_limit)
     plot_yyy2 = np.linspace(roi_limit_M, viewsize[1] - 1, viewsize[1] - roi_limit_M)
@@ -1098,7 +1099,35 @@ def plot_lanes_unwrap(viewsize, left_poly, right_poly, left_turn, right_turn, le
     return color_stop_warp, color_warp, result, debug_images
 
 
+# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ투상변환 좌표추출 함수 선언 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+def mouse_callback(event, x, y, flags, param):  # 화면에서 마우스 클릭시 호출되는 함수
+    global selected_pts, video_copy1
+    if event == cv2.EVENT_LBUTTONUP:
+        selected_pts.append([x, y])
+        # cv2.circle(video_copy1, (x,y),10,(0,255,0),3)
 
+
+def select_points(image, points_num):  # 로드 되는 창에서 변환할 좌표 4 곳을 클릭
+    global selected_pts
+    selected_pts = []
+    cv2.namedWindow('image')
+    cv2.setMouseCallback('image', mouse_callback)
+    while True:
+        if len(selected_pts) >= 1:  # 점에 원 표시
+            cv2.circle(image, tuple(selected_pts[0]), 10, (0, 0, 255), 3)
+            if len(selected_pts) >= 2:
+                cv2.circle(image, tuple(selected_pts[1]), 10, (0, 127, 255), 3)
+                if len(selected_pts) >= 3:
+                    cv2.circle(image, tuple(selected_pts[2]), 10, (0, 255, 255), 3)
+        cv2.imshow('image', image)
+        k = cv2.waitKey(1)
+        if k == 27 or len(selected_pts) == points_num:
+            break
+    cv2.destroyAllWindows()
+    return np.array(selected_pts, dtype=np.float32)
+
+
+# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ투상변환 좌표추출 함수 선언 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
 # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ투상변환 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
 def PTtrans_and_Circle(video_copy1, video_copy2, src_pts_yfix, dst_pts, viewsize):
     cv2.circle(video_copy2, tuple(src_pts_yfix[0]), 10, (0, 0, 255), 3)  # 변환하는 위치를 원본 이미지에 표시
@@ -1112,7 +1141,7 @@ def PTtrans_and_Circle(video_copy1, video_copy2, src_pts_yfix, dst_pts, viewsize
     # video_copy1_PTtrans = np.copy(video_copy1)                                        # 투상변환 적용 안하기
 
     # cv2.imshow('video_copy1_PTtrans', video_copy1_PTtrans)  #변환 이미지 출력
-    return video_copy1_PTtrans, video_copy2
+    return video_copy1_PTtrans
 
 
 # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ투상변환 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
@@ -1394,6 +1423,8 @@ class image_converter:
         left_fit_deg_ave = 0
         center_fit_deg_ave = 0
         right_fit_deg_ave = 0
+        rightx = 0
+        leftx = 0
 
         # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡros 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
 
@@ -1426,15 +1457,15 @@ class image_converter:
             if error != 0:
                 error_loop = 0
             if length_stop_histogram < 1.5: stopx_base = 0
-            print('---------------------loop count : ', loop)
-            print('---------------------error_loop : ', error_loop)
+            print('loop count : ', loop)
+            print('error_loop : ', error_loop)
 
             # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ참고용 코드(astype, dtype, shape 등)ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
             # binary_all_gray = binary_all_gray.astype(bool)
             # print(binary_all_gray.shape,'-',binary_all_gray.dtype, '-', np.min(binary_all_gray) , '-' , np.max(binary_all_gray))
             # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ참고용 코드(astype, dtype, shape 등)ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
 
-            video_copy1_PTtrans, video_copy2 = PTtrans_and_Circle(video_copy1, video_copy2, src_pts_yfix, dst_pts, viewsize)
+            video_copy1_PTtrans = PTtrans_and_Circle(video_copy1, video_copy2, src_pts_yfix, dst_pts, viewsize)
             video_copy1_PTtrans_blur_normalize4hsv = Blur_and_Normalize(video_copy1_PTtrans)  # 영상 블러처리 및 정규화
             video_copy1_Gray = cv2.cvtColor(video_copy1_PTtrans_blur_normalize4hsv, cv2.COLOR_BGR2GRAY)
             lower_yellow = (6, yellow_s_tresh_lower, 90)  # HSV 컬러 영억 검출 임계값 영역 (색상, 채도, 조도)
@@ -1491,7 +1522,7 @@ class image_converter:
                 tresh_factor_half_sum = kp * error_pixel_percent_half_sum + ki * total_error_half_sum + kd * (error_pixel_percent_half_sum - prev_error_pixel_percent_half_sum)
                 white_tresh_lower_half_sum = white_tresh_lower_half_sum * pow(2, tresh_factor_half_sum)
                 if white_tresh_lower_half_sum >= 205: white_tresh_lower_half_sum = 205
-                if white_tresh_lower_half_sum <= 157: white_tresh_lower_half_sum = 157
+                if white_tresh_lower_half_sum <= 175: white_tresh_lower_half_sum = 175
 
                 white_tresh_lower_left = white_tresh_lower_half_sum
                 white_tresh_lower_right = white_tresh_lower_half_sum
@@ -1534,16 +1565,19 @@ class image_converter:
 
             if len(left_fit) == 0:
                 leftx_base, rightx_base, hist, error, inner_length = find_left_right_via_histogram(binary_all_half_sum_gray, road_width, PIXEL_CONVERSION_RATE, add_debug_image=False)  # 영상에서의 왼쪽 오른쪽 차선의 초기 위치를 뽑아내는 함수
-                if inner_length <= (road_width - 1) / PIXEL_CONVERSION_RATE: stopx_base = 0
-
+                if inner_length <= (road_width - 1):
+                    stopx_base = 0
+                    print('stopx_base -> 0 :: inner_length = ', inner_length)
+                print('stopx_base x 0 :: inner_length = ', inner_length)
                 if error == 0:
                     left_fit, right_fit, debug_images1, error, following_left_lane, following_right_lane = find_ploy_fit_window_search(binary_all_half_sum_gray, leftx_base, rightx_base, following_left_lane, following_right_lane, road_width, PIXEL_CONVERSION_RATE, target_left_pixel_percent,
                                                                                                                                        target_right_pixel_percent, full_line_target_percent, roi_limit_L, roi_limit_M, roi_limit_R, PT_view_height, stopx_base, nwindows=13,
-                                                                                                                                       margin=round(0.45 / PIXEL_CONVERSION_RATE), is_plot=False,
+                                                                                                                                       margin=round(0.55 / PIXEL_CONVERSION_RATE), is_plot=False,
                                                                                                                                        add_debug_image=add_debug_image1)  # 사각 영역을 만들어 차선을 탐지하고 추세선을 만드는 함수
                     # if error == 0: #cv2.imshow('debug_images1', debug_images1[0])
                     if (add_debug_image1) & (error == 0):
                         add_debug_image1_a = 1
+                    print('add_debug_image1_a = ', add_debug_image1_a)
                     if is_debug: print("stage 4 a.. done_1")
 
             if error == 0:
@@ -1721,7 +1755,7 @@ class image_converter:
                     tresh_factor_left = kp * error_pixel_percent_left + ki * total_error_left + kd * (error_pixel_percent_left - prev_error_pixel_percent_left)
                     white_tresh_lower_left = white_tresh_lower_left * pow(2, tresh_factor_left)
                     if white_tresh_lower_left >= 205: white_tresh_lower_left = 205
-                    if white_tresh_lower_left <= 157: white_tresh_lower_left = 157
+                    if white_tresh_lower_left <= 175: white_tresh_lower_left = 175
 
                     # white_tresh_lower_right = white_tresh_lower_right * ((bynary_right_pixel_percent + 0.15) / (target_right_pixel_percent + 0.15))
                     prev_error_pixel_percent_right = error_pixel_percent_right
@@ -1730,7 +1764,7 @@ class image_converter:
                     tresh_factor_right = kp * error_pixel_percent_right + ki * total_error_right + kd * (error_pixel_percent_right - prev_error_pixel_percent_right)
                     white_tresh_lower_right = white_tresh_lower_right * pow(2, tresh_factor_right)
                     if white_tresh_lower_right >= 205: white_tresh_lower_right = 205
-                    if white_tresh_lower_right <= 157: white_tresh_lower_right = 157
+                    if white_tresh_lower_right <= 175: white_tresh_lower_right = 175
 
                     white_tresh_lower_half_sum = (white_tresh_lower_left + white_tresh_lower_right) / 2
 
@@ -1788,17 +1822,19 @@ class image_converter:
                     #     following_left_lane = False
                     #     print('not_line_following  :: bynary_left_upside_pixel_percent , bynary_right_upside_pixel_percent = ', bynary_left_upside_pixel_percent, ' , ',bynary_right_upside_pixel_percent)
 
-                    # bynary_all_window_image_left_area_2[:, int(viewsize[0] // 2 - road_width / PIXEL_CONVERSION_RATE / 4 - 1):int(viewsize[0] // 2 + road_width / PIXEL_CONVERSION_RATE / 4 - 1)] = 0
-                    # bynary_all_window_image_left_area_2[:, :int(viewsize[0] // 2 - (road_width / 2 + 1) / PIXEL_CONVERSION_RATE - 1)] = 0
-                    # bynary_all_window_image_left_area_2[:, int(viewsize[0] // 2 + (road_width / 2 + 1) / PIXEL_CONVERSION_RATE - 1):] = 0
+                    binary_all_left_gray[:, int(viewsize[0] // 2 - road_width / 3 / PIXEL_CONVERSION_RATE - 1):] = 0
+                    binary_all_left_gray[:, :int(viewsize[0] // 2 - (road_width / 2 + 2) / PIXEL_CONVERSION_RATE - 1)] = 0
 
-                    bynary_left_upside_pixel_percent = np.sum(bynary_all_window_image_left_area_2) / view_area
-                    bynary_right_upside_pixel_percent = np.sum(bynary_all_window_image_right_area_2) / view_area
-                    if (bynary_left_upside_pixel_percent <= target_left_pixel_percent / 5 * 2) & (bynary_right_pixel_percent > target_right_pixel_percent / 3 * 2):
+                    binary_all_right_gray[:, :int(viewsize[0] // 2 + road_width / 3 / PIXEL_CONVERSION_RATE - 1)] = 0
+                    binary_all_right_gray[:, int(viewsize[0] // 2 + (road_width / 2 + 2) / PIXEL_CONVERSION_RATE - 1):] = 0
+
+                    bynary_left_upside_pixel_percent = np.sum(binary_all_left_gray) / view_area
+                    bynary_right_upside_pixel_percent = np.sum(binary_all_right_gray) / view_area
+                    if (bynary_left_upside_pixel_percent <= full_line_target_percent / 5) & (bynary_right_upside_pixel_percent > target_right_pixel_percent / 2):
                         following_right_lane = True
                         following_left_lane = False
                         print('not follow window 1')
-                    elif (bynary_right_upside_pixel_percent <= target_right_pixel_percent / 5 * 2) & (bynary_left_pixel_percent > target_left_pixel_percent / 3 * 2):
+                    elif (bynary_right_upside_pixel_percent <= full_line_target_percent / 5) & (bynary_left_upside_pixel_percent > target_left_pixel_percent / 2):
                         following_right_lane = False
                         following_left_lane = True
                         print('not follow window 2')
@@ -1807,7 +1843,7 @@ class image_converter:
                         following_left_lane = False
                         print('not follow window 3 bynary_left_pixel_percent, bynary_right_pixel_percent = ', bynary_left_pixel_percent, ' , ', bynary_right_pixel_percent)
 
-# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ1차 로스 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+            # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ1차 로스 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
 
             if error == 0:
                 flaots_for_mission.left_curv = lc
@@ -1827,11 +1863,9 @@ class image_converter:
                 self.prediction_pub.publish(flaots)
                 self.lane_identify_pub.publish(flaots_for_mission)
 
-
                 # debug_images3[0] : 투상변환에서 차선 사이 영역 확인, debug_images3[1] : [0] 역투상 , debug_images3[2] : [1]를 원본 영상 위에 겹쳐서 보여줌 = final_image
 
-# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ2차 로스 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-
+            # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ2차 로스 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
 
 
             if error == 0:
@@ -1938,7 +1972,7 @@ class image_converter:
 
             # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡcv2.imshow 이미지 쇼 컨트롤센터 ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
             imshow_scale_1 = 0.3
-            imshow_scale_2 = 0.6
+            imshow_scale_2 = 1
 
             # cv2.imshow('video_copy1_PTtrans_blur_normalize4hsv', video_copy1_PTtrans_blur_normalize4hsv)  # 투상변환 영상
             # video_copy1_PTtrans_resized = cv2.resize(video_copy1_PTtrans, dsize=(int(round(PT_view_width_2 * imshow_scale_1)), int(round(PT_view_height_2 * imshow_scale_1))))
@@ -2044,7 +2078,7 @@ class image_converter:
 
 
 
-# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ2차 로스 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+            # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ2차 로스 추가용 코드ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
             self.image_pub.publish(self.bridge.cv2_to_imgmsg(composed_image, encoding="bgr8"))
 
 
@@ -2060,21 +2094,15 @@ def main():  # 메인문
 
 # -----------------------ros 추가용 코드------------------------------
 
+
+
 selected_pts = []  # tf function location array
 
 view_scale = 0.4
 sight_height = 1.62  # 카메라 높이
-target_distance = 16.58  # 11.25  # 목표 거리 (현재 목표 10m전방)
-road_width = 4  # 차선 폭 (현재 3.5미터 실측 후 조정)
+target_distance = 11.58  # 11.25  # 목표 거리 (현재 목표 10m전방)
+road_width = 3.35  # 차선 폭 (현재 3.5미터 실측 후 조정)
 margin = 12  # 추가로 투상변환할 폭
-
-# view_scale = 1
-# sight_height = 1.06  # 카메라 높이
-# target_distance = 19.35  # 11.25  # 목표 거리 (현재 목표 10m전방)
-# road_width = 3.5  # 차선 폭 (현재 3.5미터 실측 후 조정)
-# margin = 12  # 추가로 투상변환할 폭
-
-
 
 # focal_length_horizontal = 0.35  # sample_video(f_l_h = 0.4, f_l_v = 0.35)  C525(f_l_h = 0.515, f_l_v = 0.31(by0.1)) C930e(f_l_h = 0.35, f_l_v = 0.648)
 # focal_length_vertical = 0.648
@@ -2108,6 +2136,17 @@ viewsize = [PT_view_width, PT_view_height]
 # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ좌표 자동 지정ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
 
 
+# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ좌표 수동 지정ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+# src_pts = select_points(video_copy1, 4) #마우스로 클릭해서 좌표 뽑아내는 함수
+# src_pts_yfix = np.array([src_pts[0],src_pts[1],[src_pts[2,0],src_pts[1,1]],[src_pts[3,0],src_pts[0,1]]], dtype=np.float32) #3, 4번 점의 y좌표를 각각 1, 2번 y좌표값과 같게 만듬
+# print(src_pts_yfix)
+# viewsize = [1000, 600] #투상변환 출력할 화면 사이즈 설정 [너비, 높이]
+# weight = 300
+# dst_pts = np.array([[0, viewsize[1]-1], [0, 0], [viewsize[0]-1, 0], [viewsize[0]-1,[viewsize[1]-1]]], dtype=np.float32) #변환한 영상을 출력할 화면(딱 좌표 찍은 대로 변환)
+# dst_pts = np.array([[weight-1, viewsize[1]-1], [0, 0], [viewsize[0]-1, 0], [viewsize[0]-weight-1, viewsize[1]-1]], dtype=np.float32) #좀 더 넓은 시야(출력 영상 아래쪽에 영상이 비어있는 부분 발생, 전시야 새눈뷰 가능)
+# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ좌표 수동 지정ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+
+
 lc = 0.0
 rc = 0.0
 deviation = 0.0
@@ -2131,8 +2170,6 @@ left_yellow_lane = 0
 right_yellow_lane = 0
 following_right_lane = False
 following_left_lane = False
-
-
 
 # -----------------------ros 추가용 코드------------------------------
 
